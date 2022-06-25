@@ -1,0 +1,40 @@
+[package]
+name = "sage"
+version = "0.0.1"
+edition = "2021"
+license = "MIT"
+keywords = ["deep learning", "machine learning", "differentiable programming", "scientific computing"]
+categories = ["science", "mathematics"]
+include = ["/src", "LICENSE", "README.md"]
+
+[lib]
+name = "sage"
+crate-type = ["lib", "cdylib"]
+
+[dependencies]
+num-traits = "0.2"
+thiserror = "1.0"
+itertools = "0.10.2"
+rand = "0.8.5"
+rand_distr = "0.4.3"
+smallvec = "1.8.0"
+ocl = "0.19"
+serde = "1.0.136"
+lazy_static = "1.4.0"
+rayon = "1.5.2"
+by_address = "1.0.4"
+jni = "0.5.2"
+ureq = { version = "2.4.0", default-features = false, features = ["json", "charset"] }
+
+#
+#
+##tokio = { version = "1", features = ["full"] }
+#
+#[target.'cfg(target_os = "android")'.dependencies]
+#ndk-glue = "0.6.2"
+#
+#[package.metadata.android.application]
+#uses_cleartext_traffic = true
+#
+#[[package.metadata.android.uses_permission]]
+#name = "android.permission.INTERNET"
