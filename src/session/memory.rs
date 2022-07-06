@@ -1,7 +1,6 @@
 use crate::error::Error;
 use crate::session::device::{Buffer, Device};
 use crate::tensor::data::DeviceData;
-use crate::{Context, DataType, Tensor};
 use itertools::Itertools;
 use ocl::enums::DeviceSpecifier::All;
 use std::cell::{Cell, RefCell};

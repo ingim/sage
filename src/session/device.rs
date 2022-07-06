@@ -1,11 +1,11 @@
 // all opencl-related things go here
 
-use crate::tensor::Data;
-use crate::{Context, Tensor};
+use crate::tensor::{Data, Tensor};
 use itertools::Itertools;
 use ocl::traits::WorkDims;
 use std::fmt::{Debug, Formatter};
 use std::ops::Deref;
+use crate::session::context::Context;
 
 #[derive(Debug)]
 pub struct DeviceError(ocl::Error);
