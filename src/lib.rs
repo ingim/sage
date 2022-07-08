@@ -19,6 +19,7 @@ pub mod session;
 pub mod shape;
 pub mod tensor;
 pub mod var;
+pub mod device;
 
 extern crate core;
 
