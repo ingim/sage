@@ -4,7 +4,7 @@ use crate::session::device::{Buffer, Device, KernelProgram};
 use crate::session::memory;
 use crate::session::memory::{Allocator, MemoryError};
 use crate::shape::SizedExtent;
-use crate::tensor::data::{DataType, DeviceData};
+use crate::tensor::data::{DataType, OpenClData};
 use crate::tensor::{Data, Tensor};
 use crate::var::Var;
 use crate::{session};
@@ -16,8 +16,9 @@ use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
+use crate::session::reactor::Reactor;
 
 extern crate ocl;
 
@@ -30,6 +31,8 @@ pub struct Context {
     kernel_idx_by_src: HashMap<String, usize>,
     // memory cap
     pub memory: Allocator,
+
+    pub reactor: Arc<Mutex<Box<Reactor>>>,
 }
 
 impl Context {
@@ -44,6 +47,7 @@ impl Context {
             kernels: Vec::new(),
             kernel_idx_by_src: HashMap::new(),
             memory: Allocator::new(1000 * 1024 * 1024 / 4, false, true),
+            reactor : Reactor::new()
         }
     }
 
@@ -112,7 +116,7 @@ impl Context {
         p.exec(self);
     }
 
-    pub fn alloc(&mut self, data_type: DataType, size: usize) -> Result<DeviceData, Error> {
+    pub fn alloc(&mut self, data_type: DataType, size: usize) -> Result<OpenClData, Error> {
         // let v1 = self.m_t.values().map(|t| t.size()).sum::<usize>() * 4 / (1024 * 1024);
         //println!("alloc {} MB", self.memory.mem_used() * 4 / (1024 * 1024));
 
@@ -120,7 +124,7 @@ impl Context {
         let m = self
             .memory
             .alloc(size, &self.device)
-            .map(|memory| DeviceData { memory, data_type });
+            .map(|memory| OpenClData { memory, data_type });
         //let after = self.memory.mem_used();
 
         // println!(

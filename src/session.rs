@@ -14,6 +14,7 @@ pub mod context;
 pub mod device;
 pub mod memory;
 pub mod profiler;
+pub mod reactor;
 
 #[derive(Debug)]
 pub struct Program<'a> {

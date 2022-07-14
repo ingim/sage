@@ -236,7 +236,7 @@ impl Kernel {
         let data = val.as_ref().data();
 
         match data.deref() {
-            Data::Device(data) => {
+            Data::OpenCl(data) => {
                 let buffer = data.buffer();
 
                 let mem = &buffer.cl_mem;
@@ -247,7 +247,9 @@ impl Kernel {
                 )
                 .unwrap();
             }
-            Data::Host(_) => panic!("tensor not on the device!"),
+            Data::Host(_) => panic!("tensor not on the backend!"),
+            #[cfg(feature = "cuda")]
+            Data::Cuda(_) => unimplemented!(),
         }
         self.next_arg_idx += 1;
         self
@@ -340,7 +342,7 @@ impl Kernel {
 //             //     DeviceBuffer::Half(buf) => unimplemented!(),
 //             // };
 //         } else {
-//             panic!("tensor not on the device!!!")
+//             panic!("tensor not on the backend!!!")
 //         }
 //         self
 //     }

@@ -8,9 +8,9 @@ fn main() {
 
     // let device_list = Device::list()
     // Select GPU
-    // device = device_list[0];
+    // backend = device_list[0];
 
-    // let mut ctx = Context::new(device);
+    // let mut ctx = Context::new(backend);
 
 
 
