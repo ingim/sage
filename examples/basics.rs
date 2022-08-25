@@ -4,22 +4,8 @@ use sage::var::Var;
 
 fn main() {
 
-    // Async operations
-
-    // let device_list = Device::list()
-    // Select GPU
-    // backend = device_list[0];
-
-    // let mut ctx = Context::new(backend);
-
-
-
-    // Coordination between multiple processors
-
-    // tensor.move(ctx)
-
     // Context specifies the processor (e.g., GPU) that executes the program.
-    let mut ctx = Context::with_device(0);
+    let mut ctx = Context::new();
 
     // Tensors are n-dimension array
     let x_data = Tensor::new([
@@ -36,4 +22,19 @@ fn main() {
         [0.1546, -0.7499, 0.2420],
         [-1.6632, 1.0712, -0.2654],
     ]).to_device(&mut ctx));
+
+    // New variable is created as a result of operation
+    // There are no actual computations at this moment
+    let z = &x * &y + (&x * 3.14);
+
+    // Tensor is evaluated when eval() is called
+    let z_data = z.eval(&mut ctx);
+    println!("{:?}", z_data);
+
+    // Because c already contains evaluated tensor,
+    // this only computes addition of the two tensors
+    let u_data = (&z + &x).eval(&mut ctx);
+    println!("{:?}", u_data);
+
+
 }
