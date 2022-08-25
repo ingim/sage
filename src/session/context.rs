@@ -37,7 +37,7 @@ pub struct Context {
 
 impl Context {
     pub fn new() -> Self {
-        Self::with_device(0)
+        Self::with_device(Device::get_first_gpu())
     }
 
     pub fn with_device(idx: usize) -> Self {
@@ -47,7 +47,7 @@ impl Context {
             kernels: Vec::new(),
             kernel_idx_by_src: HashMap::new(),
             memory: Allocator::new(1000 * 1024 * 1024 / 4, false, true),
-            reactor : Reactor::new()
+            reactor: Reactor::new(),
         }
     }
 
@@ -60,8 +60,8 @@ impl Context {
     }
 
     pub fn get_program_with_id<S>(&mut self, src: S) -> (usize, &KernelProgram)
-    where
-        S: AsRef<str>,
+        where
+            S: AsRef<str>,
     {
         if !self.kernel_idx_by_src.contains_key(src.as_ref()) {
             //println!("{}", src.as_ref());
@@ -83,8 +83,8 @@ impl Context {
     }
 
     pub fn get_program<S>(&mut self, src: S) -> &KernelProgram
-    where
-        S: AsRef<str>,
+        where
+            S: AsRef<str>,
     {
         self.get_program_with_id(src).1
     }
@@ -94,8 +94,8 @@ impl Context {
     }
 
     pub fn eval<'a, I>(&mut self, targets: I)
-    where
-        I: IntoIterator<Item = &'a Var>,
+        where
+            I: IntoIterator<Item=&'a Var>,
     {
         // get (already evaluated) inputs
         let y: Vec<&Var> = targets.into_iter().collect_vec();
@@ -156,8 +156,8 @@ impl CachedAccess {
     }
 
     pub fn load_program<'a, F>(&self, ctx: &'a mut Context, gen_src: F) -> &'a KernelProgram
-    where
-        F: FnOnce() -> String,
+        where
+            F: FnOnce() -> String,
     {
         let mut last_call = self.last_call.borrow_mut();
         let ctx_ptr = ctx as *const Context;

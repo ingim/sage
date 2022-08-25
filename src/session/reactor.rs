@@ -40,51 +40,52 @@ impl Reactor {
         })));
 
         let reactor_clone = Arc::downgrade(&reactor);
+        let (tx2, rx2) = channel::<Event>();
 
 
-        let compiler = thread::spawn(move || {
-            let mut handles = vec![];
+        let compiler_handle = thread::spawn(move || {
             for event in rx {
-                let reactor = reactor_clone.clone();
                 match event {
-                    Event::Close => break,
+                    Event::Close => {
+                        tx2.send(Event::Close).unwrap();
+                        break
+                    },
                     Event::Timeout(duration, id) => {
-                        let event_handle = thread::spawn(move || {
-                            thread::sleep(Duration::from_secs(duration));
-                            let reactor = reactor.upgrade().unwrap();
-                            reactor.lock().map(|mut r| r.wake(id)).unwrap();
-                        });
-                        handles.push(event_handle);
+
+                        // do graph compilation
+
+                        // finished compilation
+                        tx2.send(Event::Timeout(duration, id)).unwrap();
                     }
                 }
             }
-            handles
-                .into_iter()
-                .for_each(|handle| handle.join().unwrap());
         });
 
-
-        let handle = thread::spawn(move || {
-            let mut handles = vec![];
-            for event in rx {
-                let reactor = reactor_clone.clone();
+        let cuda_handle = thread::spawn(move || {
+            for event in rx2 {
+                //let reactor = reactor_clone.clone();
                 match event {
                     Event::Close => break,
                     Event::Timeout(duration, id) => {
-                        let event_handle = thread::spawn(move || {
-                            thread::sleep(Duration::from_secs(duration));
-                            let reactor = reactor.upgrade().unwrap();
-                            reactor.lock().map(|mut r| r.wake(id)).unwrap();
-                        });
-                        handles.push(event_handle);
+
+                        // triage operations to corresponding cuda streams
+                        // for now, use just single stream
+
+
+
+
+
                     }
                 }
             }
-            handles
-                .into_iter()
-                .for_each(|handle| handle.join().unwrap());
+
         });
-        reactor.lock().map(|mut r| r.handle = Some(handle)).unwrap();
+
+        // cuda event poller
+
+
+
+        reactor.lock().map(|mut r| r.handle = Some(cuda_handle)).unwrap();
         reactor
     }
 
