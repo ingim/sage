@@ -15,7 +15,7 @@ use sage::var::{grad_param, Var};
 fn main() {
     println!("{:?}", Device::get_list());
 
-    let mut ctx = Context::with_device(2);
+    let mut ctx = Context::new();
 
     let mut model = ResNet::new(ResNetConfig::d18(1, 10));
 
