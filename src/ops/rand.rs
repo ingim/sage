@@ -1,11 +1,11 @@
 use crate::error::Error;
 use crate::ops::core::div_up;
-use crate::ops::{Category, NaryOperator, Operator};
+use crate::ops::{Category, Compose, Composer};
 use crate::session::context::Context;
 use crate::shape::{Array, Extent, Shape};
 use crate::tensor::data::DataType;
 use crate::tensor::{Tensor, TensorDesc};
-use crate::var::Var;
+use crate::var::Function;
 use rand::Rng;
 
 #[derive(Clone, Debug)]
@@ -18,20 +18,20 @@ struct Normal {
     output: TensorDesc,
 }
 
-pub fn uniform<E>(extents: E) -> Var
+pub fn uniform<E>(extents: E) -> Function
 where
     E: Extent,
 {
-    Var::from_nullary_op(Uniform {
+    Function::from_nullary_op(Uniform {
         output: TensorDesc::new(extents, DataType::Float),
     })
 }
 
-pub fn normal<E>(extents: E) -> Var
+pub fn normal<E>(extents: E) -> Function
 where
     E: Extent,
 {
-    Var::from_nullary_op(Normal {
+    Function::from_nullary_op(Normal {
         output: TensorDesc::new(extents, DataType::Float),
     })
 }
@@ -47,7 +47,7 @@ fn xorshift128() -> &'static str {
     }"#
 }
 
-impl NaryOperator<0> for Uniform {
+impl Compose<0> for Uniform {
     fn input(&self) -> &[TensorDesc; 0] {
         &[]
     }
@@ -56,7 +56,7 @@ impl NaryOperator<0> for Uniform {
         &self.output
     }
 
-    fn grad(&self, _: [&Var; 0], _: &Var, _: &Var) -> [Option<Var>; 0] {
+    fn grad(&self, _: [&Function; 0], _: &Function, _: &Function) -> [Option<Function>; 0] {
         []
     }
 
@@ -90,7 +90,7 @@ impl NaryOperator<0> for Uniform {
     }
 }
 
-impl NaryOperator<0> for Normal {
+impl Compose<0> for Normal {
     fn input(&self) -> &[TensorDesc; 0] {
         &[]
     }
@@ -99,7 +99,7 @@ impl NaryOperator<0> for Normal {
         &self.output
     }
 
-    fn grad(&self, _: [&Var; 0], _: &Var, _: &Var) -> [Option<Var>; 0] {
+    fn grad(&self, _: [&Function; 0], _: &Function, _: &Function) -> [Option<Function>; 0] {
         []
     }
     fn compute(&self, _: [&Tensor; 0], ctx: &mut Context) -> Result<Tensor, Error> {

@@ -3,7 +3,7 @@ use crate::layers::{
 };
 use crate::session::context::Context;
 use crate::tensor::Tensor;
-use crate::var::Var;
+use crate::var::Function;
 
 #[derive(Copy, Clone)]
 pub struct BertConfig {
@@ -69,7 +69,7 @@ impl Bert {
         }
     }
 
-    pub fn pass(&self, token_ids: &Var, attn_mask: &Var) -> Var {
+    pub fn pass(&self, token_ids: &Function, attn_mask: &Function) -> Function {
         let embeddings = self.embedding.pass(token_ids);
         let features = self.encoder.pass(embeddings, attn_mask);
 
@@ -87,7 +87,7 @@ impl Parameter for Bert {
         self.encoder.init(ctx, level);
         self.classifier.init(ctx, level);
     }
-    fn params<'a>(&'a self, p: &mut Vec<&'a Var>) {
+    fn params<'a>(&'a self, p: &mut Vec<&'a Function>) {
         self.embedding.params(p);
         self.encoder.params(p);
         self.classifier.params(p);
@@ -118,7 +118,7 @@ impl Parameter for BertEmbedding {
         self.pos_emb.init(ctx, level);
         self.norm.init(ctx, level);
     }
-    fn params<'a>(&'a self, p: &mut Vec<&'a Var>) {
+    fn params<'a>(&'a self, p: &mut Vec<&'a Function>) {
         self.word_emb.params(p);
         self.pos_emb.params(p);
         self.norm.params(p);
@@ -126,10 +126,10 @@ impl Parameter for BertEmbedding {
 }
 
 impl Layer for BertEmbedding {
-    fn pass(&self, x: &Var) -> Var {
+    fn pass(&self, x: &Function) -> Function {
         // support 2d token ids
         let seq_len = x.extent(1);
-        let pos_ids = Var::new(Tensor::from_iter(x.extent(1), 0..(seq_len as u32)));
+        let pos_ids = Function::new(Tensor::from_iter(x.extent(1), 0..(seq_len as u32)));
 
         let word_embeddings = self.word_emb.pass(x);
         let pos_embeddings = self.pos_emb.pass(&pos_ids);
@@ -152,7 +152,7 @@ impl BertEncoder {
         }
     }
 
-    pub fn pass(&self, x: Var, attn_mask: &Var) -> Var {
+    pub fn pass(&self, x: Function, attn_mask: &Function) -> Function {
         self.layers
             .iter()
             .fold(x, |x, layer| layer.pass(&x, attn_mask))
@@ -165,7 +165,7 @@ impl Parameter for BertEncoder {
             layer.init(ctx, level);
         }
     }
-    fn params<'a>(&'a self, p: &mut Vec<&'a Var>) {
+    fn params<'a>(&'a self, p: &mut Vec<&'a Function>) {
         for layer in self.layers.iter() {
             layer.params(p);
         }
@@ -196,7 +196,7 @@ impl BertLayer {
         }
     }
 
-    pub fn pass(&self, x: &Var, attn_mask: &Var) -> Var {
+    pub fn pass(&self, x: &Function, attn_mask: &Function) -> Function {
         let interim_features = self.attention.pass(x, attn_mask);
         let out_features = self.ffn.pass(&interim_features);
         self.norm.pass(&(out_features + interim_features))
@@ -209,7 +209,7 @@ impl Parameter for BertLayer {
         self.ffn.init(ctx, level);
         self.norm.init(ctx, level);
     }
-    fn params<'a>(&'a self, p: &mut Vec<&'a Var>) {
+    fn params<'a>(&'a self, p: &mut Vec<&'a Function>) {
         self.attention.params(p);
         self.ffn.params(p);
         self.norm.params(p);
@@ -247,7 +247,7 @@ impl MultiHeadAttention {
         }
     }
 
-    pub fn pass(&self, x: &Var, attn_mask: &Var) -> Var {
+    pub fn pass(&self, x: &Function, attn_mask: &Function) -> Function {
         // (N, L, E) -> (N, L, num_heads * head_dim)
 
         let query = self.query_proj.pass(x);
@@ -279,7 +279,7 @@ impl MultiHeadAttention {
         self.norm.pass(&(y + x))
     }
 
-    fn separate_heads(&self, features: Var) -> Var {
+    fn separate_heads(&self, features: Function) -> Function {
         // (N, L, num_heads * head_dim) -> (N, L, num_heads, head_dim)
         let batch_size = features.extent(0);
         let input_len = features.extent(1);
@@ -290,7 +290,7 @@ impl MultiHeadAttention {
         features.transpose(2, 1)
     }
 
-    fn merge_heads(&self, features: Var) -> Var {
+    fn merge_heads(&self, features: Function) -> Function {
         //# (N, num_heads, L, head_dim) -> (N, L, num_heads, head_dim)
         let features = features.transpose(2, 1);
 
@@ -301,7 +301,7 @@ impl MultiHeadAttention {
         features.view([batch_size, input_len, self.num_heads * self.head_dim])
     }
 
-    fn extend_mask(&self, mask: &Var) -> Var {
+    fn extend_mask(&self, mask: &Function) -> Function {
         //# (N, L) -> (N, 1, 1, L)
 
         let batch_size = mask.extent(0);
@@ -322,7 +322,7 @@ impl Parameter for MultiHeadAttention {
         self.dense.init(ctx, level);
         self.norm.init(ctx, level);
     }
-    fn params<'a>(&'a self, p: &mut Vec<&'a Var>) {
+    fn params<'a>(&'a self, p: &mut Vec<&'a Function>) {
         self.key_proj.params(p);
         self.query_proj.params(p);
         self.value_proj.params(p);

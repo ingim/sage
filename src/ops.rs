@@ -12,7 +12,7 @@ use crate::ops::map::{MapOperator, NullaryMapOperator, StackElement, VariadicMap
 use crate::ops::reduce::ReduceOperator;
 use crate::session::context::{CachedAccess, Context};
 use crate::session::memory::MemoryError;
-use crate::var::Var;
+use crate::var::Function;
 use itertools::Itertools;
 use smallvec::{smallvec, SmallVec};
 use std::cmp;
@@ -30,12 +30,12 @@ pub enum Category {
     Other,
 }
 
-pub enum Operator {
-    Nullary(Box<dyn NaryOperator<0>>),
-    Unary(Box<dyn NaryOperator<1>>),
-    Binary(Box<dyn NaryOperator<2>>),
-    Ternary(Box<dyn NaryOperator<3>>),
-    Variadic(Box<dyn VariadicOperator>),
+pub enum Composer {
+    Nullary(Box<dyn Compose<0>>),
+    Unary(Box<dyn Compose<1>>),
+    Binary(Box<dyn Compose<2>>),
+    Ternary(Box<dyn Compose<3>>),
+    Variadic(Box<dyn VariadicCompose>),
 }
 //
 // pub struct Desc<const N: usize> {
@@ -76,11 +76,11 @@ pub enum Operator {
 //     }
 // }
 
-pub trait NaryOperator<const N: usize>: Debug {
+pub trait Compose<const N: usize>: Debug {
     fn input(&self) -> &[TensorDesc; N];
     fn output(&self) -> &TensorDesc;
 
-    fn grad(&self, x: [&Var; N], y: &Var, gy: &Var) -> [Option<Var>; N];
+    fn grad(&self, x: [&Function; N], y: &Function, gy: &Function) -> [Option<Function>; N];
     fn compute(&self, x: [&Tensor; N], ctx: &mut Context) -> Result<Tensor, Error>;
 
     fn cat(&self) -> Category {
@@ -88,11 +88,11 @@ pub trait NaryOperator<const N: usize>: Debug {
     }
 }
 
-pub trait VariadicOperator: Debug {
+pub trait VariadicCompose: Debug {
     fn input(&self) -> &[TensorDesc];
     fn output(&self) -> &TensorDesc;
 
-    fn grad(&self, x: &[Var], y: &Var, gy: &Var) -> Vec<Option<Var>>;
+    fn grad(&self, x: &[Function], y: &Function, gy: &Function) -> Vec<Option<Function>>;
     fn compute(&self, x: &[Tensor], ctx: &mut Context) -> Result<Tensor, Error>;
 
     fn cat(&self) -> Category {
@@ -100,8 +100,8 @@ pub trait VariadicOperator: Debug {
     }
 }
 
-impl Operator {
-    pub fn fuse(opr1: &Operator, opr2: &Operator, idx: usize) -> Option<Operator> {
+impl Composer {
+    pub fn fuse(opr1: &Composer, opr2: &Composer, idx: usize) -> Option<Composer> {
         match (opr1.cat(), opr2.cat()) {
             // map + map -> map
             (Category::Map(op1), Category::Map(op2)) => {
@@ -134,7 +134,7 @@ impl Operator {
                 //     input.len()
                 // );
 
-                Some(Operator::Variadic(Box::new(VariadicMapOperator::new(
+                Some(Composer::Variadic(Box::new(VariadicMapOperator::new(
                     input,
                     op1.output().pristine(),
                     expr,
@@ -145,7 +145,7 @@ impl Operator {
             (Category::Layout(op1), Category::Map(op2)) => {
                 //return None;
                 if let (LayoutOperator::Expand(op1), MapOperator::Nullary(op2)) = (op1, op2) {
-                    Some(Operator::Nullary(Box::new(NullaryMapOperator::new(
+                    Some(Composer::Nullary(Box::new(NullaryMapOperator::new(
                         TensorDesc::new(op1.output().extents(), op2.output.data_type()),
                         op2.map,
                     ))))
@@ -178,121 +178,121 @@ impl Operator {
                 && x.data_type() == x.desc.data_type()));
         // TODO: check shape correspondance?
         match self {
-            Operator::Nullary(opr) => opr.compute([], ctx),
-            Operator::Unary(opr) => opr.compute([&x[0]], ctx),
-            Operator::Binary(opr) => opr.compute([&x[0], &x[1]], ctx),
-            Operator::Ternary(opr) => opr.compute([&x[0], &x[1], &x[2]], ctx),
-            Operator::Variadic(opr) => opr.compute(x, ctx),
+            Composer::Nullary(opr) => opr.compute([], ctx),
+            Composer::Unary(opr) => opr.compute([&x[0]], ctx),
+            Composer::Binary(opr) => opr.compute([&x[0], &x[1]], ctx),
+            Composer::Ternary(opr) => opr.compute([&x[0], &x[1], &x[2]], ctx),
+            Composer::Variadic(opr) => opr.compute(x, ctx),
         }
     }
 
     pub fn arity(&self) -> usize {
         match self {
-            Operator::Nullary(_) => 0,
-            Operator::Unary(_) => 1,
-            Operator::Binary(_) => 2,
-            Operator::Ternary(_) => 3,
-            Operator::Variadic(opr) => opr.input().len(),
+            Composer::Nullary(_) => 0,
+            Composer::Unary(_) => 1,
+            Composer::Binary(_) => 2,
+            Composer::Ternary(_) => 3,
+            Composer::Variadic(opr) => opr.input().len(),
         }
     }
 
     pub fn input(&self) -> &[TensorDesc] {
         match self {
-            Operator::Nullary(_) => &[],
-            Operator::Unary(opr) => opr.input(),
-            Operator::Binary(opr) => opr.input(),
-            Operator::Ternary(opr) => opr.input(),
-            Operator::Variadic(opr) => opr.input(),
+            Composer::Nullary(_) => &[],
+            Composer::Unary(opr) => opr.input(),
+            Composer::Binary(opr) => opr.input(),
+            Composer::Ternary(opr) => opr.input(),
+            Composer::Variadic(opr) => opr.input(),
         }
     }
 
     pub fn output(&self) -> &TensorDesc {
         match self {
-            Operator::Nullary(opr) => opr.output(),
-            Operator::Unary(opr) => opr.output(),
-            Operator::Binary(opr) => opr.output(),
-            Operator::Ternary(opr) => opr.output(),
-            Operator::Variadic(opr) => opr.output(),
+            Composer::Nullary(opr) => opr.output(),
+            Composer::Unary(opr) => opr.output(),
+            Composer::Binary(opr) => opr.output(),
+            Composer::Ternary(opr) => opr.output(),
+            Composer::Variadic(opr) => opr.output(),
         }
     }
 
     pub fn cat(&self) -> Category {
         match self {
-            Operator::Nullary(opr) => opr.cat(),
-            Operator::Unary(opr) => opr.cat(),
-            Operator::Binary(opr) => opr.cat(),
-            Operator::Ternary(opr) => opr.cat(),
-            Operator::Variadic(opr) => opr.cat(),
+            Composer::Nullary(opr) => opr.cat(),
+            Composer::Unary(opr) => opr.cat(),
+            Composer::Binary(opr) => opr.cat(),
+            Composer::Ternary(opr) => opr.cat(),
+            Composer::Variadic(opr) => opr.cat(),
         }
     }
 }
 
-impl Debug for Operator {
+impl Debug for Composer {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Operator::Nullary(opr) => write!(f, "nullary.{:?}", opr),
-            Operator::Unary(opr) => write!(f, "unary.{:?}", opr),
-            Operator::Binary(opr) => write!(f, "binary.{:?}", opr),
-            Operator::Ternary(opr) => write!(f, "ternary.{:?}", opr),
-            Operator::Variadic(opr) => write!(f, "variadic.{:?}", opr),
+            Composer::Nullary(opr) => write!(f, "nullary.{:?}", opr),
+            Composer::Unary(opr) => write!(f, "unary.{:?}", opr),
+            Composer::Binary(opr) => write!(f, "binary.{:?}", opr),
+            Composer::Ternary(opr) => write!(f, "ternary.{:?}", opr),
+            Composer::Variadic(opr) => write!(f, "variadic.{:?}", opr),
         }
     }
 }
 
-pub struct Operation {
-    opr: Operator,
+pub struct Transform {
+    opr: Composer,
     t_order: usize,
-    x: SmallVec<[Var; 3]>,
+    x: SmallVec<[Function; 3]>,
 }
 
-impl Operation {
+impl Transform {
     pub fn nullary<O>(opr: O) -> Self
     where
-        O: NaryOperator<0> + 'static,
+        O: Compose<0> + 'static,
     {
-        Operation {
-            opr: Operator::Nullary(Box::new(opr)),
+        Transform {
+            opr: Composer::Nullary(Box::new(opr)),
             t_order: 0,
             x: smallvec![],
         }
     }
 
-    pub fn unary<O>(opr: O, x: Var) -> Self
+    pub fn unary<O>(opr: O, x: Function) -> Self
     where
-        O: NaryOperator<1> + 'static,
+        O: Compose<1> + 'static,
     {
-        Operation {
-            opr: Operator::Unary(Box::new(opr)),
+        Transform {
+            opr: Composer::Unary(Box::new(opr)),
             t_order: x.t_order() + 1,
             x: smallvec![x],
         }
     }
 
-    pub fn binary<O>(opr: O, x1: Var, x2: Var) -> Self
+    pub fn binary<O>(opr: O, x1: Function, x2: Function) -> Self
     where
-        O: NaryOperator<2> + 'static,
+        O: Compose<2> + 'static,
     {
-        Operation {
-            opr: Operator::Binary(Box::new(opr)),
+        Transform {
+            opr: Composer::Binary(Box::new(opr)),
             t_order: cmp::max(x1.t_order(), x2.t_order()) + 1,
             x: smallvec![x1, x2],
         }
     }
 
-    pub fn ternary<O>(opr: O, x1: Var, x2: Var, x3: Var) -> Self
+    pub fn ternary<O>(opr: O, x1: Function, x2: Function, x3: Function) -> Self
     where
-        O: NaryOperator<3> + 'static,
+        O: Compose<3> + 'static,
     {
-        Operation {
-            opr: Operator::Ternary(Box::new(opr)),
+        Transform {
+            opr: Composer::Ternary(Box::new(opr)),
             t_order: cmp::max(cmp::max(x1.t_order(), x2.t_order()), x3.t_order()) + 1,
             x: smallvec![x1, x2, x3],
         }
     }
 
-    pub fn variadic<O>(opr: O, x: Vec<Var>) -> Self
+    pub fn variadic<O>(opr: O, x: Vec<Function>) -> Self
     where
-        O: VariadicOperator + 'static,
+        O: VariadicCompose + 'static,
     {
         let max_t_order = x
             .iter()
@@ -302,36 +302,36 @@ impl Operation {
 
         let x = x.into_iter().collect();
 
-        Operation {
-            opr: Operator::Variadic(Box::new(opr)),
+        Transform {
+            opr: Composer::Variadic(Box::new(opr)),
             t_order: max_t_order + 1,
             x,
         }
     }
 }
 
-impl Operation {
+impl Transform {
     pub fn t_order(&self) -> usize {
         self.t_order
     }
 
-    pub fn input(&self) -> &[Var] {
+    pub fn input(&self) -> &[Function] {
         &self.x
     }
 
-    pub fn opr(&self) -> &Operator {
+    pub fn opr(&self) -> &Composer {
         &self.opr
     }
 
-    pub fn grad(&self, y: &Var, gy: &Var) -> Vec<Option<Var>> {
+    pub fn grad(&self, y: &Function, gy: &Function) -> Vec<Option<Function>> {
         match &self.opr {
-            Operator::Nullary(_) => Vec::new(),
-            Operator::Unary(opr) => opr.grad([&self.x[0]], y, gy).to_vec(),
-            Operator::Binary(opr) => opr.grad([&self.x[0], &self.x[1]], y, gy).to_vec(),
-            Operator::Ternary(opr) => opr
+            Composer::Nullary(_) => Vec::new(),
+            Composer::Unary(opr) => opr.grad([&self.x[0]], y, gy).to_vec(),
+            Composer::Binary(opr) => opr.grad([&self.x[0], &self.x[1]], y, gy).to_vec(),
+            Composer::Ternary(opr) => opr
                 .grad([&self.x[0], &self.x[1], &self.x[2]], y, gy)
                 .to_vec(),
-            Operator::Variadic(opr) => opr.grad(&self.x, y, gy),
+            Composer::Variadic(opr) => opr.grad(&self.x, y, gy),
         }
     }
 
@@ -340,14 +340,14 @@ impl Operation {
     }
 }
 
-impl Debug for Operation {
+impl Debug for Transform {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self.opr {
-            Operator::Nullary(opr) => write!(f, "{:?}", self.opr),
-            Operator::Unary(opr) => write!(f, "{:?}", self.opr),
-            Operator::Binary(opr) => write!(f, "{:?}", self.opr),
-            Operator::Ternary(opr) => write!(f, "{:?}", self.opr),
-            Operator::Variadic(opr) => write!(f, "{:?}", self.opr),
+            Composer::Nullary(opr) => write!(f, "{:?}", self.opr),
+            Composer::Unary(opr) => write!(f, "{:?}", self.opr),
+            Composer::Binary(opr) => write!(f, "{:?}", self.opr),
+            Composer::Ternary(opr) => write!(f, "{:?}", self.opr),
+            Composer::Variadic(opr) => write!(f, "{:?}", self.opr),
         }
 
         // match &self.opr {

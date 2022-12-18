@@ -1,6 +1,6 @@
 use crate::ops::map::{ge, gt, sign};
 use crate::shape::{Axes, Extent};
-use crate::var::{Var, Variable};
+use crate::var::{Function, Variable};
 
 // nn
 
@@ -30,7 +30,7 @@ struct SoftmaxCrossEntropy;
 
 struct BinaryCrossEntropy;
 
-pub fn relu<V>(x: V) -> Var
+pub fn relu<V>(x: V) -> Function
 where
     V: Variable,
 {
@@ -39,7 +39,7 @@ where
     gt(&x, 0.0).float() * x
 }
 
-pub fn softmax<V, A>(x: V, axes: A) -> Var
+pub fn softmax<V, A>(x: V, axes: A) -> Function
 where
     V: Variable,
     A: Axes,
@@ -55,7 +55,7 @@ where
     y / sum
 }
 
-pub fn log_sum_exp<V, A>(x: V, axes: A) -> Var
+pub fn log_sum_exp<V, A>(x: V, axes: A) -> Function
 where
     V: Variable,
     A: Axes,
@@ -67,7 +67,7 @@ where
     (x - &c).exp().sum(&axes, true).log() + c
 }
 
-pub fn softmax_cross_entropy<V1, V2>(x1: V1, x2: V2) -> Var
+pub fn softmax_cross_entropy<V1, V2>(x1: V1, x2: V2) -> Function
 where
     V1: Variable,
     V2: Variable,
@@ -81,7 +81,7 @@ where
     -log_p.sum(1, false)
 }
 
-pub fn layer_norm<V1, V2, V3, A>(x: V1, axes: A, gamma: V2, beta: V3, eps: f32) -> Var
+pub fn layer_norm<V1, V2, V3, A>(x: V1, axes: A, gamma: V2, beta: V3, eps: f32) -> Function
 where
     V1: Variable,
     V2: Variable,
@@ -105,7 +105,7 @@ mod tests {
     use crate::ops::nn::{relu, softmax, softmax_cross_entropy};
     use crate::session::context::Context;
     use crate::tensor::Tensor;
-    use crate::var::{grad_check, Var};
+    use crate::var::{grad_check, Function};
 
     #[test]
     fn test_relu() {
@@ -123,7 +123,7 @@ mod tests {
             [0.0165, 1.7377, 0.0000],
             [0.0494, 0.0000, 0.5780],
         ]);
-        let x = Var::new(x);
+        let x = Function::new(x);
         let y = relu(&x);
         assert!(Tensor::all_close(&y.eval(&mut ctx), &y_gt, 0.001));
         assert!(grad_check(&y, &x, 0.01, &mut ctx));
@@ -147,7 +147,7 @@ mod tests {
         ])
         .to_device(&mut ctx);
 
-        let x = Var::new(x);
+        let x = Function::new(x);
         let y = softmax(&x, 1);
         assert!(Tensor::all_close(&y.eval(&mut ctx), &y_gt, 0.001));
         assert!(grad_check(&y, &x, 0.01, &mut ctx));
@@ -196,7 +196,7 @@ mod tests {
             ],
         ]);
 
-        let x = Var::new(x);
+        let x = Function::new(x);
 
         let loss_gt = Tensor::new([2.1987, 0.9184, 2.2250, 2.6592, 2.8357]).to_device(&mut ctx);
 
@@ -338,7 +338,7 @@ mod tests {
             ],
         ]);
 
-        let x = Var::new(x);
+        let x = Function::new(x);
 
         let y = max_pool_2d(&x, 3, 1, 0, 1);
 

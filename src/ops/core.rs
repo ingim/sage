@@ -1,9 +1,9 @@
 use crate::error::Error;
 use crate::ops;
-use crate::ops::{Category, NaryOperator, VariadicOperator};
+use crate::ops::{Category, Compose, VariadicCompose};
 use crate::shape::{display_comma, Array, Axes, Axis, Extent, Shape};
 use crate::tensor::data::{DataLiteral, DataType};
-use crate::var::{Var, Variable};
+use crate::var::{Function, Variable};
 use itertools::Itertools;
 use std::time::Instant;
 
@@ -200,7 +200,7 @@ where
 
 ////////////// ---------------------------------------------------
 
-pub fn view<V, E>(x: V, extents: E) -> Var
+pub fn view<V, E>(x: V, extents: E) -> Function
 where
     V: Variable,
     E: Extent,
@@ -210,7 +210,7 @@ where
     reshape(x, Shape::new(&extents))
 }
 
-pub fn reshape<V>(x: V, shape: Shape) -> Var
+pub fn reshape<V>(x: V, shape: Shape) -> Function
 where
     V: Variable,
 {
@@ -220,7 +220,7 @@ where
         panic!("incompatible size");
     }
 
-    Var::from_unary_op(
+    Function::from_unary_op(
         Reshape {
             input: [x.desc().clone()],
             output: TensorDesc {
@@ -233,7 +233,7 @@ where
 }
 
 // always creates new tensor
-impl NaryOperator<1> for Reshape {
+impl Compose<1> for Reshape {
     fn input(&self) -> &[TensorDesc; 1] {
         &self.input
     }
@@ -242,7 +242,7 @@ impl NaryOperator<1> for Reshape {
         &self.output
     }
 
-    fn grad(&self, _: [&Var; 1], _: &Var, gy: &Var) -> [Option<Var>; 1] {
+    fn grad(&self, _: [&Function; 1], _: &Function, gy: &Function) -> [Option<Function>; 1] {
         [Some(reshape(gy, self.input[0].shape.clone()))]
     }
 
@@ -260,7 +260,7 @@ impl NaryOperator<1> for Reshape {
     }
 }
 
-pub fn expand<V, E>(x: V, extents: E) -> Var
+pub fn expand<V, E>(x: V, extents: E) -> Function
 where
     V: Variable,
     E: Extent,
@@ -268,7 +268,7 @@ where
     let x = x.into_var();
     let extents = extents.to_arr(0).unwrap();
 
-    Var::from_unary_op(
+    Function::from_unary_op(
         Expand {
             input: [x.desc().clone()],
             output: TensorDesc {
@@ -280,7 +280,7 @@ where
     )
 }
 
-impl NaryOperator<1> for Expand {
+impl Compose<1> for Expand {
     fn input(&self) -> &[TensorDesc; 1] {
         &self.input
     }
@@ -289,7 +289,7 @@ impl NaryOperator<1> for Expand {
         &self.output
     }
 
-    fn grad(&self, x: [&Var; 1], _: &Var, gy: &Var) -> [Option<Var>; 1] {
+    fn grad(&self, x: [&Function; 1], _: &Function, gy: &Function) -> [Option<Function>; 1] {
         // match dims from the backwards
 
         let surplus = gy.rank() - x[0].rank();
@@ -321,14 +321,14 @@ impl NaryOperator<1> for Expand {
     }
 }
 
-pub fn tr<V>(x: V) -> Var
+pub fn tr<V>(x: V) -> Function
 where
     V: Variable,
 {
     transpose(x, 0, 1)
 }
 
-pub fn transpose<V, A1, A2>(x: V, axis1: A1, axis2: A2) -> Var
+pub fn transpose<V, A1, A2>(x: V, axis1: A1, axis2: A2) -> Function
 where
     V: Variable,
     A1: Axis,
@@ -355,7 +355,7 @@ where
     permute(x, axes)
 }
 
-pub fn permute<V, A>(x: V, axes: A) -> Var
+pub fn permute<V, A>(x: V, axes: A) -> Function
 where
     V: Variable,
     A: Axes,
@@ -363,7 +363,7 @@ where
     let x = x.into_var();
     let axes = axes.to_arr(x.rank()).unwrap();
 
-    Var::from_unary_op(
+    Function::from_unary_op(
         Permute {
             input: [x.desc().clone()],
             output: TensorDesc {
@@ -376,7 +376,7 @@ where
     )
 }
 
-impl NaryOperator<1> for Permute {
+impl Compose<1> for Permute {
     fn input(&self) -> &[TensorDesc; 1] {
         &self.input
     }
@@ -385,7 +385,7 @@ impl NaryOperator<1> for Permute {
         &self.output
     }
 
-    fn grad(&self, _: [&Var; 1], _: &Var, gy: &Var) -> [Option<Var>; 1] {
+    fn grad(&self, _: [&Function; 1], _: &Function, gy: &Function) -> [Option<Function>; 1] {
         // [A, B, C, D] -> permute(2, 1, 4, 3) -> [B, A, D, C]
         // [B, A, D, C] -> permute(2, 1, 4, 3) -> [A, B, C, D]
 
@@ -397,7 +397,7 @@ impl NaryOperator<1> for Permute {
     }
 }
 
-pub fn squeeze<V, A>(x: V, axis: A) -> Var
+pub fn squeeze<V, A>(x: V, axis: A) -> Function
 where
     V: Variable,
     A: Axis,
@@ -405,7 +405,7 @@ where
     let mut x = x.into_var();
     let axis = axis.to_usize(x.rank()).unwrap();
 
-    Var::from_unary_op(
+    Function::from_unary_op(
         Squeeze {
             input: [x.desc().clone()],
             output: TensorDesc {
@@ -418,7 +418,7 @@ where
     )
 }
 
-impl NaryOperator<1> for Squeeze {
+impl Compose<1> for Squeeze {
     fn input(&self) -> &[TensorDesc; 1] {
         &self.input
     }
@@ -427,7 +427,7 @@ impl NaryOperator<1> for Squeeze {
         &self.output
     }
 
-    fn grad(&self, _: [&Var; 1], _: &Var, gy: &Var) -> [Option<Var>; 1] {
+    fn grad(&self, _: [&Function; 1], _: &Function, gy: &Function) -> [Option<Function>; 1] {
         [Some(unsqueeze(gy, self.axis))]
     }
 
@@ -436,7 +436,7 @@ impl NaryOperator<1> for Squeeze {
     }
 }
 
-pub fn unsqueeze<V, A>(x: V, axis: A) -> Var
+pub fn unsqueeze<V, A>(x: V, axis: A) -> Function
 where
     V: Variable,
     A: Axis,
@@ -444,7 +444,7 @@ where
     let x = x.into_var();
     let axis = axis.to_usize(x.rank() + 1).unwrap();
 
-    Var::from_unary_op(
+    Function::from_unary_op(
         Unsqueeze {
             input: [x.desc().clone()],
             output: TensorDesc {
@@ -457,7 +457,7 @@ where
     )
 }
 
-impl NaryOperator<1> for Unsqueeze {
+impl Compose<1> for Unsqueeze {
     fn input(&self) -> &[TensorDesc; 1] {
         &self.input
     }
@@ -466,7 +466,7 @@ impl NaryOperator<1> for Unsqueeze {
         &self.output
     }
 
-    fn grad(&self, _: [&Var; 1], _: &Var, gy: &Var) -> [Option<Var>; 1] {
+    fn grad(&self, _: [&Function; 1], _: &Function, gy: &Function) -> [Option<Function>; 1] {
         [Some(squeeze(gy, self.axis))]
     }
 
@@ -475,7 +475,7 @@ impl NaryOperator<1> for Unsqueeze {
     }
 }
 
-pub fn slice<V, A>(x: V, axis: A, start: usize, end: usize) -> Var
+pub fn slice<V, A>(x: V, axis: A, start: usize, end: usize) -> Function
 where
     V: Variable,
     A: Axis,
@@ -483,7 +483,7 @@ where
     let x = x.into_var();
     let axis = axis.to_usize(x.rank()).unwrap();
 
-    Var::from_unary_op(
+    Function::from_unary_op(
         Slice {
             input: [x.desc().clone()],
             output: TensorDesc {
@@ -498,7 +498,7 @@ where
     )
 }
 
-impl NaryOperator<1> for Slice {
+impl Compose<1> for Slice {
     fn input(&self) -> &[TensorDesc; 1] {
         &self.input
     }
@@ -507,7 +507,7 @@ impl NaryOperator<1> for Slice {
         &self.output
     }
 
-    fn grad(&self, x: [&Var; 1], _: &Var, gy: &Var) -> [Option<Var>; 1] {
+    fn grad(&self, x: [&Function; 1], _: &Function, gy: &Function) -> [Option<Function>; 1] {
         // scatter add
         [Some(unslice(
             gy,
@@ -522,7 +522,7 @@ impl NaryOperator<1> for Slice {
     }
 }
 
-pub fn unslice<V, A>(x: V, axis: A, start: usize, end: usize) -> Var
+pub fn unslice<V, A>(x: V, axis: A, start: usize, end: usize) -> Function
 where
     V: Variable,
     A: Axis,
@@ -535,7 +535,7 @@ where
     let mut extents = x.extents().to_vec();
     extents[axis] = end;
 
-    Var::from_unary_op(
+    Function::from_unary_op(
         Unslice {
             input: [x.desc().clone()],
             output: TensorDesc {
@@ -550,7 +550,7 @@ where
     )
 }
 
-impl NaryOperator<1> for Unslice {
+impl Compose<1> for Unslice {
     fn input(&self) -> &[TensorDesc; 1] {
         &self.input
     }
@@ -559,7 +559,7 @@ impl NaryOperator<1> for Unslice {
         &self.output
     }
 
-    fn grad(&self, x: [&Var; 1], _: &Var, gy: &Var) -> [Option<Var>; 1] {
+    fn grad(&self, x: [&Function; 1], _: &Function, gy: &Function) -> [Option<Function>; 1] {
         [Some(slice(
             gy,
             self.axis,
@@ -610,7 +610,7 @@ impl NaryOperator<1> for Unslice {
     }
 }
 
-pub fn gather<V1, V2, A>(x: V1, ind: V2, axis: A) -> Var
+pub fn gather<V1, V2, A>(x: V1, ind: V2, axis: A) -> Function
 where
     V1: Variable,
     V2: Variable,
@@ -625,7 +625,7 @@ where
     // (164, 100) g0 (64, 100) -> (64, 1)
     assert!((0..x.rank()).any(|i| i == axis || x.extent(i) >= ind.extent(i)));
 
-    Var::from_binary_op(
+    Function::from_binary_op(
         Gather {
             input: [x.desc().clone(), ind.desc().clone()],
             output: TensorDesc {
@@ -639,7 +639,7 @@ where
     )
 }
 
-impl NaryOperator<2> for Gather {
+impl Compose<2> for Gather {
     fn input(&self) -> &[TensorDesc; 2] {
         &self.input
     }
@@ -648,7 +648,7 @@ impl NaryOperator<2> for Gather {
         &self.output
     }
 
-    fn grad(&self, x: [&Var; 2], _: &Var, gy: &Var) -> [Option<Var>; 2] {
+    fn grad(&self, x: [&Function; 2], _: &Function, gy: &Function) -> [Option<Function>; 2] {
         [Some(scatter(gy, x[1], self.axis, x[0].extents())), None]
     }
 
@@ -718,7 +718,7 @@ impl NaryOperator<2> for Gather {
     }
 }
 
-pub fn scatter<V1, V2, A, E>(x: V1, ind: V2, axis: A, extents: E) -> Var
+pub fn scatter<V1, V2, A, E>(x: V1, ind: V2, axis: A, extents: E) -> Function
 where
     V1: Variable,
     V2: Variable,
@@ -737,7 +737,7 @@ where
     assert!((0..x.rank())
         .any(|i| { i == axis || (x.extent(i) >= ind.extent(i) && extents[i] >= x.extent(i)) }));
 
-    Var::from_binary_op(
+    Function::from_binary_op(
         Scatter {
             input: [x.desc().clone(), ind.desc().clone()],
             output: TensorDesc::new(extents, x.data_type()),
@@ -748,7 +748,7 @@ where
     )
 }
 
-impl NaryOperator<2> for Scatter {
+impl Compose<2> for Scatter {
     fn input(&self) -> &[TensorDesc; 2] {
         &self.input
     }
@@ -757,7 +757,7 @@ impl NaryOperator<2> for Scatter {
         &self.output
     }
 
-    fn grad(&self, x: [&Var; 2], _: &Var, gy: &Var) -> [Option<Var>; 2] {
+    fn grad(&self, x: [&Function; 2], _: &Function, gy: &Function) -> [Option<Function>; 2] {
         [Some(gather(gy, x[1], self.axis)), None]
     }
 
@@ -833,13 +833,13 @@ impl NaryOperator<2> for Scatter {
     }
 }
 
-pub fn concat<V, I, A>(x: I, axis: A) -> Var
+pub fn concat<V, I, A>(x: I, axis: A) -> Function
 where
     V: Variable,
     I: IntoIterator<Item = V>,
     A: Axis,
 {
-    let x: Vec<Var> = x.into_iter().map(|v| v.into_var()).collect_vec();
+    let x: Vec<Function> = x.into_iter().map(|v| v.into_var()).collect_vec();
     let axis = axis.to_usize(x[0].rank()).unwrap();
 
     let mut concat_size = x[0].extent(axis);
@@ -857,7 +857,7 @@ where
     let mut extents = x[0].extents().to_vec();
     extents[axis] = concat_size;
 
-    Var::from_variadic_op(
+    Function::from_variadic_op(
         Concat {
             input: x.iter().map(|v| v.desc()).cloned().collect_vec(),
             output: TensorDesc {
@@ -870,7 +870,7 @@ where
     )
 }
 
-impl VariadicOperator for Concat {
+impl VariadicCompose for Concat {
     fn input(&self) -> &[TensorDesc] {
         &self.input
     }
@@ -879,7 +879,7 @@ impl VariadicOperator for Concat {
         &self.output
     }
 
-    fn grad(&self, x: &[Var], _: &Var, gy: &Var) -> Vec<Option<Var>> {
+    fn grad(&self, x: &[Function], _: &Function, gy: &Function) -> Vec<Option<Function>> {
         let mut i = 0;
         let mut g = Vec::new();
         for e in x.iter().map(|v| v.extents()[self.axis]) {
@@ -940,7 +940,7 @@ mod tests {
     use crate::session::context::Context;
     use crate::shape::Shape;
     use crate::tensor::Tensor;
-    use crate::var::{grad_check, Var};
+    use crate::var::{grad_check, Function};
 
     #[test]
     fn test_reshape() {
@@ -977,7 +977,7 @@ mod tests {
             [[-0.3811, 0.5414, -0.6000], [-1.2772, -1.5542, 0.2278]],
         ]);
 
-        let a = Var::new(a);
+        let a = Function::new(a);
 
         let b = a.reshape(Shape::new([4, 2, 3]));
 

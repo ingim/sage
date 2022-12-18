@@ -1,7 +1,7 @@
 use crate::ops::map::eq;
-use crate::var::{Var, Variable};
+use crate::var::{Function, Variable};
 
-pub fn accuracy<V1, V2>(logits: V1, labels: V2) -> Var
+pub fn accuracy<V1, V2>(logits: V1, labels: V2) -> Function
 where
     V1: Variable,
     V2: Variable,

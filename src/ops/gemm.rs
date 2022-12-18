@@ -1,10 +1,10 @@
 use crate::error::Error;
 use crate::ops::core::{ceil, div_up};
-use crate::ops::{Category, NaryOperator, Operator};
+use crate::ops::{Category, Compose, Composer};
 use crate::session::context::{CachedAccess, Context};
 use crate::shape::{Array, Shape};
 use crate::tensor::{Tensor, TensorDesc};
-use crate::var::{Var, Variable};
+use crate::var::{Function, Variable};
 use smallvec::ToSmallVec;
 use std::cmp::min;
 use std::time::Instant;
@@ -27,7 +27,7 @@ struct GemmBatched {
     cached: CachedAccess,
 }
 
-pub fn matmul<V1, V2>(x1: V1, x2: V2) -> Var
+pub fn matmul<V1, V2>(x1: V1, x2: V2) -> Function
 where
     V1: Variable,
     V2: Variable,
@@ -50,7 +50,7 @@ where
     gemm(x1, x2, false, false).view(ext)
 }
 
-pub fn matmul_batched<V1, V2>(x1: V1, x2: V2) -> Var
+pub fn matmul_batched<V1, V2>(x1: V1, x2: V2) -> Function
 where
     V1: Variable,
     V2: Variable,
@@ -103,7 +103,7 @@ where
     gemm_batched(x1, x2, false, false).view(ext)
 }
 
-pub fn gemm<V1, V2>(x1: V1, x2: V2, t1: bool, t2: bool) -> Var
+pub fn gemm<V1, V2>(x1: V1, x2: V2, t1: bool, t2: bool) -> Function
 where
     V1: Variable,
     V2: Variable,
@@ -123,7 +123,7 @@ where
     };
     assert_eq!(chan1, chan2);
 
-    Var::from_binary_op(
+    Function::from_binary_op(
         Gemm {
             input: [x1.desc().clone(), x2.desc().clone()],
             output: TensorDesc {
@@ -139,7 +139,7 @@ where
     )
 }
 
-impl NaryOperator<2> for Gemm {
+impl Compose<2> for Gemm {
     fn input(&self) -> &[TensorDesc; 2] {
         &self.input
     }
@@ -148,7 +148,7 @@ impl NaryOperator<2> for Gemm {
         &self.output
     }
 
-    fn grad(&self, x: [&Var; 2], _: &Var, gy: &Var) -> [Option<Var>; 2] {
+    fn grad(&self, x: [&Function; 2], _: &Function, gy: &Function) -> [Option<Function>; 2] {
         let (gx1, gx2) = match (self.transpose_a, self.transpose_b) {
             (false, false) => (gemm(gy, x[1], false, true), gemm(x[0], gy, true, false)),
             (false, true) => (gemm(gy, x[1], false, false), gemm(gy, x[0], true, false)),
@@ -250,7 +250,7 @@ impl Gemm {
     }
 }
 
-pub fn gemm_batched<V1, V2>(x1: V1, x2: V2, t1: bool, t2: bool) -> Var
+pub fn gemm_batched<V1, V2>(x1: V1, x2: V2, t1: bool, t2: bool) -> Function
 where
     V1: Variable,
     V2: Variable,
@@ -273,7 +273,7 @@ where
     };
     assert_eq!(chan1, chan2);
 
-    Var::from_binary_op(
+    Function::from_binary_op(
         GemmBatched {
             input: [x1.desc().clone(), x2.desc().clone()],
             output: TensorDesc {
@@ -289,7 +289,7 @@ where
     )
 }
 
-impl NaryOperator<2> for GemmBatched {
+impl Compose<2> for GemmBatched {
     fn input(&self) -> &[TensorDesc; 2] {
         &self.input
     }
@@ -298,7 +298,7 @@ impl NaryOperator<2> for GemmBatched {
         &self.output
     }
 
-    fn grad(&self, x: [&Var; 2], _: &Var, gy: &Var) -> [Option<Var>; 2] {
+    fn grad(&self, x: [&Function; 2], _: &Function, gy: &Function) -> [Option<Function>; 2] {
         let (gx1, gx2) = match (self.transpose_a, self.transpose_b) {
             (false, false) => (
                 gemm_batched(gy, x[1], false, true),
@@ -426,7 +426,7 @@ mod tests {
     use crate::ops::gemm::gemm;
     use crate::session::context::Context;
     use crate::tensor::Tensor;
-    use crate::var::{grad_check, Var};
+    use crate::var::{grad_check, Function};
 
     #[test]
     fn test_gemm() {
@@ -574,8 +574,8 @@ mod tests {
 
         //let a = Tensor::ones([5, 5]).to_device(&ctx);
         //let b = Tensor::ones([5, 5]).to_device(&ctx);
-        let a = Var::new(a);
-        let b = Var::new(b);
+        let a = Function::new(a);
+        let b = Function::new(b);
         let c = gemm(&a, &b, false, false);
         assert!(Tensor::all_close(&c.eval(&mut ctx), &c_gt, 0.001));
 
@@ -708,8 +708,8 @@ mod tests {
         let c = gemm(&a, &b, true, true).eval(&mut ctx);
         assert!(Tensor::all_close(&c, &ctt_gt, 0.001));
 
-        let a = Var::new(a);
-        let b = Var::new(b);
+        let a = Function::new(a);
+        let b = Function::new(b);
 
         // gemm grads
 

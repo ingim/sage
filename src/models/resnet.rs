@@ -4,7 +4,7 @@ use crate::layers::{
 };
 use crate::ops::nn::relu;
 use crate::session::context::Context;
-use crate::var::Var;
+use crate::var::Function;
 use itertools::Itertools;
 use std::time::Instant;
 
@@ -136,13 +136,13 @@ impl Parameter for ResNet {
         println!("{indent} resnet");
         self.0.init(ctx, level);
     }
-    fn params<'a>(&'a self, p: &mut Vec<&'a Var>) {
+    fn params<'a>(&'a self, p: &mut Vec<&'a Function>) {
         self.0.params(p);
     }
 }
 
 impl Layer for ResNet {
-    fn pass(&self, x: &Var) -> Var {
+    fn pass(&self, x: &Function) -> Function {
         self.0.pass(x)
     }
 }
@@ -224,7 +224,7 @@ impl Parameter for BottleneckLayer {
         }
     }
 
-    fn params<'a>(&'a self, p: &mut Vec<&'a Var>) {
+    fn params<'a>(&'a self, p: &mut Vec<&'a Function>) {
         self.pass.params(p);
         if let Some(d) = &self.downsample {
             d.params(p);
@@ -233,7 +233,7 @@ impl Parameter for BottleneckLayer {
 }
 
 impl Layer for BottleneckLayer {
-    fn pass(&self, x: &Var) -> Var {
+    fn pass(&self, x: &Function) -> Function {
         let y_long = self.pass.pass(x);
         let y = if let Some(d) = &self.downsample {
             y_long + d.pass(x)
@@ -259,7 +259,7 @@ impl Parameter for BasicLayer {
         }
     }
 
-    fn params<'a>(&'a self, p: &mut Vec<&'a Var>) {
+    fn params<'a>(&'a self, p: &mut Vec<&'a Function>) {
         self.pass.params(p);
         if let Some(d) = &self.downsample {
             d.params(p);
@@ -268,7 +268,7 @@ impl Parameter for BasicLayer {
 }
 
 impl Layer for BasicLayer {
-    fn pass(&self, x: &Var) -> Var {
+    fn pass(&self, x: &Function) -> Function {
         let y_long = self.pass.pass(x);
         let y = if let Some(d) = &self.downsample {
             y_long + d.pass(x)

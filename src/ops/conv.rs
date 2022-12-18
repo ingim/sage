@@ -1,10 +1,10 @@
 use crate::error::Error;
-use crate::ops::{NaryOperator, Operator};
+use crate::ops::{Compose, Composer};
 use crate::session::context::{CachedAccess, Context};
 use crate::shape::SizedExtent;
 use crate::tensor::data::DataType;
 use crate::tensor::{Tensor, TensorDesc};
-use crate::var::{Var, Variable};
+use crate::var::{Function, Variable};
 
 #[derive(Clone, Debug)]
 struct Im2col<const N: usize> {
@@ -58,7 +58,7 @@ fn conv_size<const N: usize>(
     out
 }
 
-pub fn conv_2d<V1, V2, E>(x: V1, filter: V2, stride: E, padding: E, dilation: E) -> Var
+pub fn conv_2d<V1, V2, E>(x: V1, filter: V2, stride: E, padding: E, dilation: E) -> Function
 where
     V1: Variable,
     V2: Variable,
@@ -95,7 +95,7 @@ where
     col.matmul(filter).view([n, col_h, col_w, c_out])
 }
 
-pub fn conv_transpose_2d<V1, V2, E>(x: V1, filter: V2, stride: E, padding: E, dilation: E) -> Var
+pub fn conv_transpose_2d<V1, V2, E>(x: V1, filter: V2, stride: E, padding: E, dilation: E) -> Function
 where
     V1: Variable,
     V2: Variable,
@@ -140,7 +140,7 @@ where
     col2im(col, out, ker_size, stride, padding, dilation)
 }
 
-pub fn avg_pool_2d<V, E>(x: V, ker_size: E, stride: E, padding: E, dilation: E) -> Var
+pub fn avg_pool_2d<V, E>(x: V, ker_size: E, stride: E, padding: E, dilation: E) -> Function
 where
     V: Variable,
     E: SizedExtent<2>,
@@ -152,7 +152,7 @@ where
     col.mean([3, 4], false)
 }
 
-pub fn max_pool_2d<V, E>(x: V, ker_size: E, stride: E, padding: E, dilation: E) -> Var
+pub fn max_pool_2d<V, E>(x: V, ker_size: E, stride: E, padding: E, dilation: E) -> Function
 where
     V: Variable,
     E: SizedExtent<2>,
@@ -164,7 +164,7 @@ where
     col.max([3, 4], false)
 }
 
-pub fn batch_norm_2d<V1, V2, V3>(x: V1, gamma: V2, beta: V2, mean: V3, var: V3, eps: f32) -> Var
+pub fn batch_norm_2d<V1, V2, V3>(x: V1, gamma: V2, beta: V2, mean: V3, var: V3, eps: f32) -> Function
 where
     V1: Variable,
     V2: Variable,
@@ -185,7 +185,7 @@ where
 }
 
 // [N, H, W, C] -> [N, OH, OW, KH, KW, C]
-pub fn im2col<V, E>(x: V, ker_size: E, stride: E, padding: E, dilation: E) -> Var
+pub fn im2col<V, E>(x: V, ker_size: E, stride: E, padding: E, dilation: E) -> Function
 where
     V: Variable,
     E: SizedExtent<2>,
@@ -210,7 +210,7 @@ where
         x.data_type(),
     );
 
-    Var::from_unary_op(
+    Function::from_unary_op(
         Im2col {
             input: [x.desc().clone()],
             output,
@@ -233,7 +233,7 @@ pub fn col2im<V, E>(
     stride: E,
     padding: E,
     dilation: E,
-) -> Var
+) -> Function
 where
     V: Variable,
     E: SizedExtent<2>,
@@ -248,7 +248,7 @@ where
 
     let output = TensorDesc::new([n, img_size[1], img_size[0], chan], x.data_type());
 
-    Var::from_unary_op(
+    Function::from_unary_op(
         Col2im {
             input: [x.desc().clone()],
             output,
@@ -263,7 +263,7 @@ where
     )
 }
 
-impl NaryOperator<1> for Im2col<2> {
+impl Compose<1> for Im2col<2> {
     fn input(&self) -> &[TensorDesc; 1] {
         &self.input
     }
@@ -272,7 +272,7 @@ impl NaryOperator<1> for Im2col<2> {
         &self.output
     }
 
-    fn grad(&self, x: [&Var; 1], _: &Var, gy: &Var) -> [Option<Var>; 1] {
+    fn grad(&self, x: [&Function; 1], _: &Function, gy: &Function) -> [Option<Function>; 1] {
         let img_h = x[0].extent(1);
         let img_w = x[0].extent(2);
 
@@ -374,7 +374,7 @@ impl NaryOperator<1> for Im2col<2> {
     }
 }
 
-impl NaryOperator<1> for Col2im<2> {
+impl Compose<1> for Col2im<2> {
     fn input(&self) -> &[TensorDesc; 1] {
         &self.input
     }
@@ -383,7 +383,7 @@ impl NaryOperator<1> for Col2im<2> {
         &self.output
     }
 
-    fn grad(&self, _: [&Var; 1], _: &Var, gy: &Var) -> [Option<Var>; 1] {
+    fn grad(&self, _: [&Function; 1], _: &Function, gy: &Function) -> [Option<Function>; 1] {
         // println!("x{:?}", x.extents());
         // println!("gy{:?}", gy.extents());
         // println!("gx(expect) {:?}", self.input.extents());
@@ -503,7 +503,7 @@ mod tests {
     use crate::ops::conv::{col2im, conv_2d, im2col};
     use crate::session::context::Context;
     use crate::tensor::Tensor;
-    use crate::var::{grad_check, Var};
+    use crate::var::{grad_check, Function};
 
     #[test]
     fn test_im2col() {
@@ -685,7 +685,7 @@ mod tests {
         ]])
         .to_device(&mut ctx);
 
-        let x = Var::new(x);
+        let x = Function::new(x);
         let y = im2col(&x, [3, 2], [1, 1], [0, 0], [1, 1]);
 
         // let c = gemm(&a, &b, true, true).eval(&mut ctx);
@@ -983,7 +983,7 @@ mod tests {
             ],
         ]);
 
-        let x = Var::new(x);
+        let x = Function::new(x);
         let y = col2im(&x, [4, 5], [3, 2], [1, 1], [0, 0], [1, 1]);
 
         assert!(Tensor::all_close(&y.eval(&mut ctx), &y_gt, 0.001));
@@ -1526,8 +1526,8 @@ mod tests {
             ],
         ]]);
 
-        let x = Var::new(x);
-        let filter = Var::new(filter);
+        let x = Function::new(x);
+        let filter = Function::new(filter);
 
         let y = conv_2d(&x, &filter, [1, 1], [1, 1], [1, 1]);
 

@@ -1,7 +1,7 @@
 use crate::layers::Parameter;
 use crate::ops;
 use crate::ops::map::scalar;
-use crate::ops::{NaryOperator, Operation, VariadicOperator};
+use crate::ops::{Compose, Transform, VariadicCompose};
 use crate::session::context::Context;
 use crate::shape::Shape;
 use crate::shape::{Axes, Axis, Extent};
@@ -20,7 +20,7 @@ use std::ops::{Add, Deref, DerefMut};
 use std::rc::Rc;
 
 pub enum Origin {
-    Operation(Operation),
+    Operation(Transform),
     Data(RefCell<Option<Tensor>>),
 }
 
@@ -30,7 +30,7 @@ pub struct Note {
 }
 
 #[derive(Clone)]
-pub struct Var {
+pub struct Function {
     // Basic template for variable
     desc: TensorDesc,
 
@@ -43,7 +43,7 @@ pub struct Var {
 
 // Differentiate variables, a.k.a. backpropagation
 
-pub fn grad_param<'a, P>(y: &'a Var, model: &'a P) -> HashMap<&'a Var, Var>
+pub fn grad_param<'a, P>(y: &'a Function, model: &'a P) -> HashMap<&'a Function, Function>
 where
     P: Parameter + 'a,
 {
@@ -53,12 +53,12 @@ where
     grad(y, params)
 }
 
-pub fn grad<'a, I>(y: &'a Var, x: I) -> HashMap<&'a Var, Var>
+pub fn grad<'a, I>(y: &'a Function, x: I) -> HashMap<&'a Function, Function>
 where
-    I: IntoIterator<Item = &'a Var> + 'a,
+    I: IntoIterator<Item = &'a Function> + 'a,
 {
-    let mut queue = BinaryHeap::<Ranked<&Var>>::new();
-    let mut grads = HashMap::<&Var, Var>::new();
+    let mut queue = BinaryHeap::<Ranked<&Function>>::new();
+    let mut grads = HashMap::<&Function, Function>::new();
 
     // The 'genesis' gy/gy, (which always equals to 1)
     grads.insert(y, scalar(1.0, y.extents()));
@@ -104,7 +104,7 @@ where
 
 /** Gradient checking using numerical gradient by finite differences.
  **/
-pub fn grad_check(y: &Var, x: &Var, err: f32, ctx: &mut Context) -> bool {
+pub fn grad_check(y: &Function, x: &Function, err: f32, ctx: &mut Context) -> bool {
     let gx_gt = x.grad(y).eval(ctx).to_host();
 
     let d = x.data().unwrap().to_host();
@@ -147,7 +147,7 @@ pub fn grad_check(y: &Var, x: &Var, err: f32, ctx: &mut Context) -> bool {
     true
 }
 
-impl Var {
+impl Function {
     // ******************************** Constructors ******************************** //
 
     pub fn new<T>(data: T) -> Self
@@ -156,7 +156,7 @@ impl Var {
     {
         let data = data.as_ref().clone();
 
-        Var {
+        Function {
             desc: data.desc().clone(),
             origin: Rc::new(Origin::Data(RefCell::new(Some(data)))),
             notes: None,
@@ -167,7 +167,7 @@ impl Var {
     where
         E: Extent,
     {
-        Var {
+        Function {
             desc: TensorDesc::new(extents, data_type),
             origin: Rc::new(Origin::Data(RefCell::new(None))),
             notes: None,
@@ -176,55 +176,55 @@ impl Var {
 
     pub fn from_nullary_op<O>(opr: O) -> Self
     where
-        O: NaryOperator<0> + 'static,
+        O: Compose<0> + 'static,
     {
-        Var {
+        Function {
             desc: opr.output().clone(),
-            origin: Rc::new(Origin::Operation(Operation::nullary(opr))),
+            origin: Rc::new(Origin::Operation(Transform::nullary(opr))),
             notes: None,
         }
     }
 
-    pub fn from_unary_op<O>(opr: O, x: Var) -> Self
+    pub fn from_unary_op<O>(opr: O, x: Function) -> Self
     where
-        O: NaryOperator<1> + 'static,
+        O: Compose<1> + 'static,
     {
-        Var {
+        Function {
             desc: opr.output().clone(),
-            origin: Rc::new(Origin::Operation(Operation::unary(opr, x))),
+            origin: Rc::new(Origin::Operation(Transform::unary(opr, x))),
             notes: None,
         }
     }
 
-    pub fn from_binary_op<O>(opr: O, x1: Var, x2: Var) -> Self
+    pub fn from_binary_op<O>(opr: O, x1: Function, x2: Function) -> Self
     where
-        O: NaryOperator<2> + 'static,
+        O: Compose<2> + 'static,
     {
-        Var {
+        Function {
             desc: opr.output().clone(),
-            origin: Rc::new(Origin::Operation(Operation::binary(opr, x1, x2))),
+            origin: Rc::new(Origin::Operation(Transform::binary(opr, x1, x2))),
             notes: None,
         }
     }
 
-    pub fn from_ternary_op<O>(opr: O, x1: Var, x2: Var, x3: Var) -> Self
+    pub fn from_ternary_op<O>(opr: O, x1: Function, x2: Function, x3: Function) -> Self
     where
-        O: NaryOperator<3> + 'static,
+        O: Compose<3> + 'static,
     {
-        Var {
+        Function {
             desc: opr.output().clone(),
-            origin: Rc::new(Origin::Operation(Operation::ternary(opr, x1, x2, x3))),
+            origin: Rc::new(Origin::Operation(Transform::ternary(opr, x1, x2, x3))),
             notes: None,
         }
     }
 
-    pub fn from_variadic_op<O>(opr: O, x: Vec<Var>) -> Self
+    pub fn from_variadic_op<O>(opr: O, x: Vec<Function>) -> Self
     where
-        O: VariadicOperator + 'static,
+        O: VariadicCompose + 'static,
     {
-        Var {
+        Function {
             desc: opr.output().clone(),
-            origin: Rc::new(Origin::Operation(Operation::variadic(opr, x))),
+            origin: Rc::new(Origin::Operation(Transform::variadic(opr, x))),
             notes: None,
         }
     }
@@ -281,7 +281,7 @@ impl Var {
     //     self.origin.borrow()
     // }
 
-    pub fn op(&self) -> Option<&Operation> {
+    pub fn op(&self) -> Option<&Transform> {
         if let Origin::Operation(op) = self.origin.borrow() {
             return Some(op.borrow());
         }
@@ -323,7 +323,7 @@ impl Var {
     // }
     // ******************************** grad ******************************** //
 
-    pub fn grad<V>(&self, y: V) -> Var
+    pub fn grad<V>(&self, y: V) -> Function
     where
         V: Variable,
     {
@@ -378,132 +378,132 @@ impl Var {
 
     // ******************************** Core Utilities ******************************** //
 
-    pub fn copy(&self) -> Var {
+    pub fn copy(&self) -> Function {
         ops::map::copy(self)
     }
 
-    pub fn abs(&self) -> Var {
+    pub fn abs(&self) -> Function {
         ops::map::abs(self)
     }
 
-    pub fn modular<V>(&self, x: V) -> Var
+    pub fn modular<V>(&self, x: V) -> Function
     where
         V: Variable,
     {
         ops::map::modular(self, x)
     }
 
-    pub fn recip(&self) -> Var {
+    pub fn recip(&self) -> Function {
         ops::map::recip(self)
     }
 
-    pub fn log(&self) -> Var {
+    pub fn log(&self) -> Function {
         ops::map::log(self)
     }
 
-    pub fn exp(&self) -> Var {
+    pub fn exp(&self) -> Function {
         ops::map::exp(self)
     }
 
-    pub fn square(&self) -> Var {
+    pub fn square(&self) -> Function {
         ops::map::square(self)
     }
 
-    pub fn sqrt(&self) -> Var {
+    pub fn sqrt(&self) -> Function {
         ops::map::sqrt(self)
     }
 
-    pub fn pow<V>(&self, x: V) -> Var
+    pub fn pow<V>(&self, x: V) -> Function
     where
         V: Variable,
     {
         ops::map::pow(self, x)
     }
 
-    pub fn sin(&self) -> Var {
+    pub fn sin(&self) -> Function {
         ops::map::sin(self)
     }
 
-    pub fn sinh(&self) -> Var {
+    pub fn sinh(&self) -> Function {
         ops::map::sinh(self)
     }
 
-    pub fn cos(&self) -> Var {
+    pub fn cos(&self) -> Function {
         ops::map::cos(self)
     }
 
-    pub fn cosh(&self) -> Var {
+    pub fn cosh(&self) -> Function {
         ops::map::cosh(self)
     }
 
-    pub fn tan(&self) -> Var {
+    pub fn tan(&self) -> Function {
         ops::map::tan(self)
     }
 
-    pub fn tanh(&self) -> Var {
+    pub fn tanh(&self) -> Function {
         ops::map::tanh(self)
     }
 
-    pub fn asin(&self) -> Var {
+    pub fn asin(&self) -> Function {
         ops::map::asin(self)
     }
 
-    pub fn asinh(&self) -> Var {
+    pub fn asinh(&self) -> Function {
         ops::map::asinh(self)
     }
 
-    pub fn acos(&self) -> Var {
+    pub fn acos(&self) -> Function {
         ops::map::acos(self)
     }
 
-    pub fn acosh(&self) -> Var {
+    pub fn acosh(&self) -> Function {
         ops::map::acosh(self)
     }
 
-    pub fn atan(&self) -> Var {
+    pub fn atan(&self) -> Function {
         ops::map::atan(self)
     }
 
-    pub fn atanh(&self) -> Var {
+    pub fn atanh(&self) -> Function {
         ops::map::atanh(self)
     }
 
-    pub fn erf(&self) -> Var {
+    pub fn erf(&self) -> Function {
         ops::map::erf(self)
     }
 
-    pub fn sign(&self) -> Var {
+    pub fn sign(&self) -> Function {
         ops::map::sign(self)
     }
 
-    pub fn minimum<V>(&self, x: V) -> Var
+    pub fn minimum<V>(&self, x: V) -> Function
     where
         V: Variable,
     {
         ops::map::min(self, x)
     }
 
-    pub fn maximum<V>(&self, x: V) -> Var
+    pub fn maximum<V>(&self, x: V) -> Function
     where
         V: Variable,
     {
         ops::map::max(self, x)
     }
 
-    pub fn ceil(&self) -> Var {
+    pub fn ceil(&self) -> Function {
         ops::map::ceil(self)
     }
 
-    pub fn floor(&self) -> Var {
+    pub fn floor(&self) -> Function {
         ops::map::floor(self)
     }
 
-    pub fn round(&self) -> Var {
+    pub fn round(&self) -> Function {
         ops::map::round(self)
     }
 
     ///// shaping
-    pub fn organize(&self) -> Var {
+    pub fn organize(&self) -> Function {
         if self.shape().has_default_strides() {
             self.clone()
         } else {
@@ -511,37 +511,37 @@ impl Var {
         }
     }
 
-    pub fn int(&self) -> Var {
+    pub fn int(&self) -> Function {
         ops::map::int(self)
     }
 
-    pub fn float(&self) -> Var {
+    pub fn float(&self) -> Function {
         ops::map::float(self)
     }
 
-    pub fn reshape(&self, shape: Shape) -> Var {
+    pub fn reshape(&self, shape: Shape) -> Function {
         ops::core::reshape(self, shape)
     }
 
-    pub fn view<E>(&self, extent: E) -> Var
+    pub fn view<E>(&self, extent: E) -> Function
     where
         E: Extent,
     {
         ops::core::view(self, extent)
     }
 
-    pub fn expand<E>(&self, extent: E) -> Var
+    pub fn expand<E>(&self, extent: E) -> Function
     where
         E: Extent,
     {
         ops::core::expand(self, extent)
     }
 
-    pub fn tr(&self) -> Var {
+    pub fn tr(&self) -> Function {
         ops::core::tr(self)
     }
 
-    pub fn transpose<A1, A2>(&self, axis1: A1, axis2: A2) -> Var
+    pub fn transpose<A1, A2>(&self, axis1: A1, axis2: A2) -> Function
     where
         A1: Axis,
         A2: Axis,
@@ -549,42 +549,42 @@ impl Var {
         ops::core::transpose(self, axis1, axis2)
     }
 
-    pub fn permute<A>(&self, axes: A) -> Var
+    pub fn permute<A>(&self, axes: A) -> Function
     where
         A: Axes,
     {
         ops::core::permute(self, axes)
     }
 
-    pub fn squeeze<A>(&self, axis: A) -> Var
+    pub fn squeeze<A>(&self, axis: A) -> Function
     where
         A: Axis,
     {
         ops::core::squeeze(self, axis)
     }
 
-    pub fn unsqueeze<A>(&self, axis: A) -> Var
+    pub fn unsqueeze<A>(&self, axis: A) -> Function
     where
         A: Axis,
     {
         ops::core::unsqueeze(self, axis)
     }
 
-    pub fn index<A>(&self, axis: A, index: usize) -> Var
+    pub fn index<A>(&self, axis: A, index: usize) -> Function
     where
         A: Axis,
     {
         self.slice(axis, index, index + 1)
     }
 
-    pub fn slice<A>(&self, axis: A, start: usize, end: usize) -> Var
+    pub fn slice<A>(&self, axis: A, start: usize, end: usize) -> Function
     where
         A: Axis,
     {
         ops::core::slice(self, axis, start, end)
     }
 
-    pub fn unslice<V, A>(&self, axis: A, start: usize, end: usize) -> Var
+    pub fn unslice<V, A>(&self, axis: A, start: usize, end: usize) -> Function
     where
         V: Variable,
         A: Axis,
@@ -592,7 +592,7 @@ impl Var {
         ops::core::unslice(self, axis, start, end)
     }
 
-    pub fn gather<V, A>(&self, idx: V, axis: A) -> Var
+    pub fn gather<V, A>(&self, idx: V, axis: A) -> Function
     where
         V: Variable,
         A: Axis,
@@ -600,7 +600,7 @@ impl Var {
         ops::core::gather(self, idx, axis)
     }
 
-    pub fn scatter<V, A, E>(&self, idx: V, axis: A, extent: E) -> Var
+    pub fn scatter<V, A, E>(&self, idx: V, axis: A, extent: E) -> Function
     where
         V: Variable,
         A: Axis,
@@ -611,14 +611,14 @@ impl Var {
 
     //// GEMM
 
-    pub fn matmul<V>(&self, x: V) -> Var
+    pub fn matmul<V>(&self, x: V) -> Function
     where
         V: Variable,
     {
         ops::gemm::matmul(self, x)
     }
 
-    pub fn matmul_batched<V>(&self, x: V) -> Var
+    pub fn matmul_batched<V>(&self, x: V) -> Function
     where
         V: Variable,
     {
@@ -626,56 +626,56 @@ impl Var {
     }
 
     ///// reduction
-    pub fn sum<A>(&self, axes: A, preserve_axes: bool) -> Var
+    pub fn sum<A>(&self, axes: A, preserve_axes: bool) -> Function
     where
         A: Axes,
     {
         ops::reduce::sum(self, axes, preserve_axes)
     }
 
-    pub fn mean<A>(&self, axes: A, preserve_axes: bool) -> Var
+    pub fn mean<A>(&self, axes: A, preserve_axes: bool) -> Function
     where
         A: Axes,
     {
         ops::reduce::mean(self, axes, preserve_axes)
     }
 
-    pub fn var<A>(&self, axes: A, preserve_axes: bool) -> Var
+    pub fn var<A>(&self, axes: A, preserve_axes: bool) -> Function
     where
         A: Axes,
     {
         ops::reduce::var(self, axes, preserve_axes)
     }
 
-    pub fn prod<A>(&self, axes: A, preserve_axes: bool) -> Var
+    pub fn prod<A>(&self, axes: A, preserve_axes: bool) -> Function
     where
         A: Axes,
     {
         ops::reduce::prod(self, axes, preserve_axes)
     }
 
-    pub fn max<A>(&self, axes: A, preserve_axes: bool) -> Var
+    pub fn max<A>(&self, axes: A, preserve_axes: bool) -> Function
     where
         A: Axes,
     {
         ops::reduce::max(self, axes, preserve_axes)
     }
 
-    pub fn min<A>(&self, axes: A, preserve_axes: bool) -> Var
+    pub fn min<A>(&self, axes: A, preserve_axes: bool) -> Function
     where
         A: Axes,
     {
         ops::reduce::min(self, axes, preserve_axes)
     }
 
-    pub fn argmax<A>(&self, axis: A, preserve_axes: bool) -> Var
+    pub fn argmax<A>(&self, axis: A, preserve_axes: bool) -> Function
     where
         A: Axis,
     {
         ops::reduce::argmax(self, axis, preserve_axes)
     }
 
-    pub fn argmin<A>(&self, axis: A, preserve_axes: bool) -> Var
+    pub fn argmin<A>(&self, axis: A, preserve_axes: bool) -> Function
     where
         A: Axis,
     {
@@ -683,9 +683,9 @@ impl Var {
     }
 }
 
-impl Eq for Var {}
+impl Eq for Function {}
 
-impl PartialEq for Var {
+impl PartialEq for Function {
     fn eq(&self, other: &Self) -> bool {
         let extents_eq = self.shape().eq(other.shape());
         let data_type_eq = self.data_type() == other.data_type();
@@ -696,7 +696,7 @@ impl PartialEq for Var {
     }
 }
 
-impl Hash for Var {
+impl Hash for Function {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.shape().strides().hash(state);
 
@@ -704,7 +704,7 @@ impl Hash for Var {
     }
 }
 
-impl Debug for Var {
+impl Debug for Function {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let name = if let Some(note) = &self.notes {
             note.name.as_ref()
@@ -795,7 +795,7 @@ impl<T> PartialOrd for Ranked<T> {
 
 // (kinda) special list for storing var refs
 pub struct List<'a> {
-    list: Vec<&'a Var>,
+    list: Vec<&'a Function>,
 }
 
 impl<'a> List<'a> {
@@ -803,7 +803,7 @@ impl<'a> List<'a> {
         List { list: vec![] }
     }
 
-    pub fn add(&mut self, var: &'a Var) -> &mut Self {
+    pub fn add(&mut self, var: &'a Function) -> &mut Self {
         self.list.push(var);
         self
     }
@@ -814,17 +814,17 @@ impl<'a> List<'a> {
 }
 
 pub trait Variable {
-    fn into_var(self) -> Var;
+    fn into_var(self) -> Function;
 }
 
-impl Variable for Var {
-    fn into_var(self) -> Var {
+impl Variable for Function {
+    fn into_var(self) -> Function {
         self
     }
 }
 
-impl Variable for &Var {
-    fn into_var(self) -> Var {
+impl Variable for &Function {
+    fn into_var(self) -> Function {
         (*self).clone()
     }
 }
@@ -840,14 +840,14 @@ impl Variable for &Var {
 // }
 
 impl Variable for Tensor {
-    fn into_var(self) -> Var {
-        Var::new(self)
+    fn into_var(self) -> Function {
+        Function::new(self)
     }
 }
 
 impl Variable for &Tensor {
-    fn into_var(self) -> Var {
-        Var::new(self)
+    fn into_var(self) -> Function {
+        Function::new(self)
     }
 }
 
@@ -855,7 +855,7 @@ impl<T> Variable for T
 where
     T: Scalar,
 {
-    fn into_var(self) -> Var {
+    fn into_var(self) -> Function {
         scalar(self, [1])
     }
 }

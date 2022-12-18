@@ -4,7 +4,7 @@ use crate::layers::{
 };
 use crate::ops::core::concat;
 use crate::session::context::Context;
-use crate::var::Var;
+use crate::var::Function;
 use itertools::Itertools;
 
 #[derive(Copy, Clone)]
@@ -108,13 +108,13 @@ impl Parameter for DenseNet {
         println!("{indent} resnet");
         self.0.init(ctx, level);
     }
-    fn params<'a>(&'a self, p: &mut Vec<&'a Var>) {
+    fn params<'a>(&'a self, p: &mut Vec<&'a Function>) {
         self.0.params(p);
     }
 }
 
 impl Layer for DenseNet {
-    fn pass(&self, x: &Var) -> Var {
+    fn pass(&self, x: &Function) -> Function {
         self.0.pass(x)
     }
 }
@@ -142,13 +142,13 @@ impl Parameter for BottleneckLayer {
         println!("{indent} resnet");
         self.0.init(ctx, level);
     }
-    fn params<'a>(&'a self, p: &mut Vec<&'a Var>) {
+    fn params<'a>(&'a self, p: &mut Vec<&'a Function>) {
         self.0.params(p);
     }
 }
 
 impl Layer for BottleneckLayer {
-    fn pass(&self, x: &Var) -> Var {
+    fn pass(&self, x: &Function) -> Function {
         let y = self.0.pass(x);
         //println!("{:?}, {:?}", x.extents(), y.extents());
         // key idea of the DenseNet

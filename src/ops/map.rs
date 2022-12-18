@@ -1,12 +1,12 @@
 use crate::error::Error;
 use crate::ops::core::translate_id;
-use crate::ops::{Category, NaryOperator, Operator, TensorDesc, VariadicOperator};
+use crate::ops::{Category, Compose, Composer, TensorDesc, VariadicCompose};
 use crate::session::context::{CachedAccess, Context};
 use crate::shape;
 use crate::shape::{Array, Extent, Shape};
 use crate::tensor::data::{DataType, Scalar};
 use crate::tensor::Tensor;
-use crate::var::{Var, Variable};
+use crate::var::{Function, Variable};
 use itertools::Itertools;
 use core::cell::RefCell;
 use core::f32::consts::PI;
@@ -409,7 +409,7 @@ fn compile_map(fn_name: &str, x: &[&Tensor], exp: String, desc: &TensorDesc) -> 
     )
 }
 
-pub fn broadcast<V1, V2>(x1: V1, x2: V2) -> (Var, Var)
+pub fn broadcast<V1, V2>(x1: V1, x2: V2) -> (Function, Function)
     where
         V1: Variable,
         V2: Variable,
@@ -428,7 +428,7 @@ pub fn broadcast<V1, V2>(x1: V1, x2: V2) -> (Var, Var)
     (x1, x2)
 }
 
-pub fn broadcast3<V1, V2, V3>(x1: V1, x2: V2, x3: V3) -> (Var, Var, Var)
+pub fn broadcast3<V1, V2, V3>(x1: V1, x2: V2, x3: V3) -> (Function, Function, Function)
     where
         V1: Variable,
         V2: Variable,
@@ -455,7 +455,7 @@ pub fn broadcast3<V1, V2, V3>(x1: V1, x2: V2, x3: V3) -> (Var, Var, Var)
     (x1, x2, x3)
 }
 
-pub fn unary_map<V>(x: V, map: UnaryMap) -> Var
+pub fn unary_map<V>(x: V, map: UnaryMap) -> Function
     where
         V: Variable,
 {
@@ -469,7 +469,7 @@ pub fn unary_map<V>(x: V, map: UnaryMap) -> Var
         _ => DataType::Float,
     };
 
-    Var::from_unary_op(
+    Function::from_unary_op(
         UnaryMapOperator {
             input: [x.desc().clone()],
             output: TensorDesc::new(x.extents(), data_type),
@@ -480,7 +480,7 @@ pub fn unary_map<V>(x: V, map: UnaryMap) -> Var
     )
 }
 
-pub fn binary_map<V1, V2>(x1: V1, x2: V2, map: BinaryMap) -> Var
+pub fn binary_map<V1, V2>(x1: V1, x2: V2, map: BinaryMap) -> Function
     where
         V1: Variable,
         V2: Variable,
@@ -500,7 +500,7 @@ pub fn binary_map<V1, V2>(x1: V1, x2: V2, map: BinaryMap) -> Var
         _ => x1.data_type(),
     };
 
-    Var::from_binary_op(
+    Function::from_binary_op(
         BinaryMapOperator {
             input: [x1.desc().clone(), x2.desc().clone()],
             output: TensorDesc::new(x1.extents(), data_type),
@@ -514,7 +514,7 @@ pub fn binary_map<V1, V2>(x1: V1, x2: V2, map: BinaryMap) -> Var
 
 ///// Nullary ops
 
-pub fn scalar<S, E>(val: S, extents: E) -> Var
+pub fn scalar<S, E>(val: S, extents: E) -> Function
     where
         S: Scalar,
         E: Extent,
@@ -523,7 +523,7 @@ pub fn scalar<S, E>(val: S, extents: E) -> Var
 
     let literal = format!("({}){}", data_type.opencl(), val);
 
-    Var::from_nullary_op(NullaryMapOperator {
+    Function::from_nullary_op(NullaryMapOperator {
         output: TensorDesc::new(extents, data_type),
         map: NullaryMap::Literal(literal),
         cached: Default::default(),
@@ -532,196 +532,196 @@ pub fn scalar<S, E>(val: S, extents: E) -> Var
 
 ////// Unary ops
 
-pub fn copy<V>(x: V) -> Var
+pub fn copy<V>(x: V) -> Function
     where
         V: Variable,
 {
     unary_map(x, UnaryMap::Copy)
 }
 
-pub fn abs<V>(x: V) -> Var
+pub fn abs<V>(x: V) -> Function
     where
         V: Variable,
 {
     unary_map(x, UnaryMap::Abs)
 }
 
-pub fn neg<V>(x: V) -> Var
+pub fn neg<V>(x: V) -> Function
     where
         V: Variable,
 {
     unary_map(x, UnaryMap::Neg)
 }
 
-pub fn recip<V>(x: V) -> Var
+pub fn recip<V>(x: V) -> Function
     where
         V: Variable,
 {
     unary_map(x, UnaryMap::Recip)
 }
 
-pub fn log<V>(x: V) -> Var
+pub fn log<V>(x: V) -> Function
     where
         V: Variable,
 {
     unary_map(x, UnaryMap::Log)
 }
 
-pub fn exp<V>(x: V) -> Var
+pub fn exp<V>(x: V) -> Function
     where
         V: Variable,
 {
     unary_map(x, UnaryMap::Exp)
 }
 
-pub fn sqrt<V>(x: V) -> Var
+pub fn sqrt<V>(x: V) -> Function
     where
         V: Variable,
 {
     unary_map(x, UnaryMap::Sqrt)
 }
 
-pub fn square<V>(x: V) -> Var
+pub fn square<V>(x: V) -> Function
     where
         V: Variable,
 {
     unary_map(x, UnaryMap::Square)
 }
 
-pub fn erf<V>(x: V) -> Var
+pub fn erf<V>(x: V) -> Function
     where
         V: Variable,
 {
     unary_map(x, UnaryMap::Erf)
 }
 
-pub fn sign<V>(x: V) -> Var
+pub fn sign<V>(x: V) -> Function
     where
         V: Variable,
 {
     unary_map(x, UnaryMap::Sign)
 }
 
-pub fn ceil<V>(x: V) -> Var
+pub fn ceil<V>(x: V) -> Function
     where
         V: Variable,
 {
     unary_map(x, UnaryMap::Ceil)
 }
 
-pub fn floor<V>(x: V) -> Var
+pub fn floor<V>(x: V) -> Function
     where
         V: Variable,
 {
     unary_map(x, UnaryMap::Floor)
 }
 
-pub fn round<V>(x: V) -> Var
+pub fn round<V>(x: V) -> Function
     where
         V: Variable,
 {
     unary_map(x, UnaryMap::Round)
 }
 
-pub fn sin<V>(x: V) -> Var
+pub fn sin<V>(x: V) -> Function
     where
         V: Variable,
 {
     unary_map(x, UnaryMap::Sin)
 }
 
-pub fn sinh<V>(x: V) -> Var
+pub fn sinh<V>(x: V) -> Function
     where
         V: Variable,
 {
     unary_map(x, UnaryMap::Sinh)
 }
 
-pub fn cos<V>(x: V) -> Var
+pub fn cos<V>(x: V) -> Function
     where
         V: Variable,
 {
     unary_map(x, UnaryMap::Cos)
 }
 
-pub fn cosh<V>(x: V) -> Var
+pub fn cosh<V>(x: V) -> Function
     where
         V: Variable,
 {
     unary_map(x, UnaryMap::Cosh)
 }
 
-pub fn tan<V>(x: V) -> Var
+pub fn tan<V>(x: V) -> Function
     where
         V: Variable,
 {
     unary_map(x, UnaryMap::Tan)
 }
 
-pub fn tanh<V>(x: V) -> Var
+pub fn tanh<V>(x: V) -> Function
     where
         V: Variable,
 {
     unary_map(x, UnaryMap::Tanh)
 }
 
-pub fn asin<V>(x: V) -> Var
+pub fn asin<V>(x: V) -> Function
     where
         V: Variable,
 {
     unary_map(x, UnaryMap::Asin)
 }
 
-pub fn asinh<V>(x: V) -> Var
+pub fn asinh<V>(x: V) -> Function
     where
         V: Variable,
 {
     unary_map(x, UnaryMap::Asinh)
 }
 
-pub fn acos<V>(x: V) -> Var
+pub fn acos<V>(x: V) -> Function
     where
         V: Variable,
 {
     unary_map(x, UnaryMap::Acos)
 }
 
-pub fn acosh<V>(x: V) -> Var
+pub fn acosh<V>(x: V) -> Function
     where
         V: Variable,
 {
     unary_map(x, UnaryMap::Acosh)
 }
 
-pub fn atan<V>(x: V) -> Var
+pub fn atan<V>(x: V) -> Function
     where
         V: Variable,
 {
     unary_map(x, UnaryMap::Atan)
 }
 
-pub fn atanh<V>(x: V) -> Var
+pub fn atanh<V>(x: V) -> Function
     where
         V: Variable,
 {
     unary_map(x, UnaryMap::Atanh)
 }
 
-pub fn not<V>(x: V) -> Var
+pub fn not<V>(x: V) -> Function
     where
         V: Variable,
 {
     unary_map(x, UnaryMap::Not)
 }
 
-pub fn int<V>(x: V) -> Var
+pub fn int<V>(x: V) -> Function
     where
         V: Variable,
 {
     unary_map(x, UnaryMap::CastInt)
 }
 
-pub fn float<V>(x: V) -> Var
+pub fn float<V>(x: V) -> Function
     where
         V: Variable,
 {
@@ -730,7 +730,7 @@ pub fn float<V>(x: V) -> Var
 
 // binary maps
 
-pub fn add<V1, V2>(x1: V1, x2: V2) -> Var
+pub fn add<V1, V2>(x1: V1, x2: V2) -> Function
     where
         V1: Variable,
         V2: Variable,
@@ -738,7 +738,7 @@ pub fn add<V1, V2>(x1: V1, x2: V2) -> Var
     binary_map(x1, x2, BinaryMap::Add)
 }
 
-pub fn sub<V1, V2>(x1: V1, x2: V2) -> Var
+pub fn sub<V1, V2>(x1: V1, x2: V2) -> Function
     where
         V1: Variable,
         V2: Variable,
@@ -746,7 +746,7 @@ pub fn sub<V1, V2>(x1: V1, x2: V2) -> Var
     binary_map(x1, x2, BinaryMap::Sub)
 }
 
-pub fn div<V1, V2>(x1: V1, x2: V2) -> Var
+pub fn div<V1, V2>(x1: V1, x2: V2) -> Function
     where
         V1: Variable,
         V2: Variable,
@@ -754,7 +754,7 @@ pub fn div<V1, V2>(x1: V1, x2: V2) -> Var
     binary_map(x1, x2, BinaryMap::Div)
 }
 
-pub fn mul<V1, V2>(x1: V1, x2: V2) -> Var
+pub fn mul<V1, V2>(x1: V1, x2: V2) -> Function
     where
         V1: Variable,
         V2: Variable,
@@ -762,7 +762,7 @@ pub fn mul<V1, V2>(x1: V1, x2: V2) -> Var
     binary_map(x1, x2, BinaryMap::Mul)
 }
 
-pub fn modular<V1, V2>(x1: V1, x2: V2) -> Var
+pub fn modular<V1, V2>(x1: V1, x2: V2) -> Function
     where
         V1: Variable,
         V2: Variable,
@@ -770,7 +770,7 @@ pub fn modular<V1, V2>(x1: V1, x2: V2) -> Var
     binary_map(x1, x2, BinaryMap::Mod)
 }
 
-pub fn pow<V1, V2>(x1: V1, x2: V2) -> Var
+pub fn pow<V1, V2>(x1: V1, x2: V2) -> Function
     where
         V1: Variable,
         V2: Variable,
@@ -778,7 +778,7 @@ pub fn pow<V1, V2>(x1: V1, x2: V2) -> Var
     binary_map(x1, x2, BinaryMap::Pow)
 }
 
-pub fn min<V1, V2>(x1: V1, x2: V2) -> Var
+pub fn min<V1, V2>(x1: V1, x2: V2) -> Function
     where
         V1: Variable,
         V2: Variable,
@@ -786,7 +786,7 @@ pub fn min<V1, V2>(x1: V1, x2: V2) -> Var
     binary_map(x1, x2, BinaryMap::Min)
 }
 
-pub fn max<V1, V2>(x1: V1, x2: V2) -> Var
+pub fn max<V1, V2>(x1: V1, x2: V2) -> Function
     where
         V1: Variable,
         V2: Variable,
@@ -794,7 +794,7 @@ pub fn max<V1, V2>(x1: V1, x2: V2) -> Var
     binary_map(x1, x2, BinaryMap::Max)
 }
 
-pub fn and<V1, V2>(x1: V1, x2: V2) -> Var
+pub fn and<V1, V2>(x1: V1, x2: V2) -> Function
     where
         V1: Variable,
         V2: Variable,
@@ -802,7 +802,7 @@ pub fn and<V1, V2>(x1: V1, x2: V2) -> Var
     binary_map(x1, x2, BinaryMap::And)
 }
 
-pub fn or<V1, V2>(x1: V1, x2: V2) -> Var
+pub fn or<V1, V2>(x1: V1, x2: V2) -> Function
     where
         V1: Variable,
         V2: Variable,
@@ -810,7 +810,7 @@ pub fn or<V1, V2>(x1: V1, x2: V2) -> Var
     binary_map(x1, x2, BinaryMap::Or)
 }
 
-pub fn eq<V1, V2>(x1: V1, x2: V2) -> Var
+pub fn eq<V1, V2>(x1: V1, x2: V2) -> Function
     where
         V1: Variable,
         V2: Variable,
@@ -818,7 +818,7 @@ pub fn eq<V1, V2>(x1: V1, x2: V2) -> Var
     binary_map(x1, x2, BinaryMap::Eq)
 }
 
-pub fn ne<V1, V2>(x1: V1, x2: V2) -> Var
+pub fn ne<V1, V2>(x1: V1, x2: V2) -> Function
     where
         V1: Variable,
         V2: Variable,
@@ -826,7 +826,7 @@ pub fn ne<V1, V2>(x1: V1, x2: V2) -> Var
     binary_map(x1, x2, BinaryMap::Ne)
 }
 
-pub fn gt<V1, V2>(x1: V1, x2: V2) -> Var
+pub fn gt<V1, V2>(x1: V1, x2: V2) -> Function
     where
         V1: Variable,
         V2: Variable,
@@ -834,7 +834,7 @@ pub fn gt<V1, V2>(x1: V1, x2: V2) -> Var
     binary_map(x1, x2, BinaryMap::Gt)
 }
 
-pub fn ge<V1, V2>(x1: V1, x2: V2) -> Var
+pub fn ge<V1, V2>(x1: V1, x2: V2) -> Function
     where
         V1: Variable,
         V2: Variable,
@@ -842,7 +842,7 @@ pub fn ge<V1, V2>(x1: V1, x2: V2) -> Var
     binary_map(x1, x2, BinaryMap::Ge)
 }
 
-pub fn lt<V1, V2>(x1: V1, x2: V2) -> Var
+pub fn lt<V1, V2>(x1: V1, x2: V2) -> Function
     where
         V1: Variable,
         V2: Variable,
@@ -850,7 +850,7 @@ pub fn lt<V1, V2>(x1: V1, x2: V2) -> Var
     binary_map(x1, x2, BinaryMap::Lt)
 }
 
-pub fn le<V1, V2>(x1: V1, x2: V2) -> Var
+pub fn le<V1, V2>(x1: V1, x2: V2) -> Function
     where
         V1: Variable,
         V2: Variable,
@@ -858,7 +858,7 @@ pub fn le<V1, V2>(x1: V1, x2: V2) -> Var
     binary_map(x1, x2, BinaryMap::Le)
 }
 
-pub fn cond<V1, V2, V3>(c: V1, x1: V2, x2: V3) -> Var
+pub fn cond<V1, V2, V3>(c: V1, x1: V2, x2: V3) -> Function
     where
         V1: Variable,
         V2: Variable,
@@ -869,7 +869,7 @@ pub fn cond<V1, V2, V3>(c: V1, x1: V2, x2: V3) -> Var
     assert_eq!(x1.data_type(), x2.data_type());
     assert_eq!(c.data_type(), DataType::Uint);
 
-    Var::from_ternary_op(
+    Function::from_ternary_op(
         TernaryMapOperator {
             input: [c.desc().clone(), x1.desc().clone(), x2.desc().clone()],
             output: x1.desc().pristine(),
@@ -882,7 +882,7 @@ pub fn cond<V1, V2, V3>(c: V1, x1: V2, x2: V3) -> Var
     )
 }
 
-impl NaryOperator<0> for NullaryMapOperator {
+impl Compose<0> for NullaryMapOperator {
     fn input(&self) -> &[TensorDesc; 0] {
         &[]
     }
@@ -891,7 +891,7 @@ impl NaryOperator<0> for NullaryMapOperator {
         &self.output
     }
 
-    fn grad(&self, _: [&Var; 0], _: &Var, _: &Var) -> [Option<Var>; 0] {
+    fn grad(&self, _: [&Function; 0], _: &Function, _: &Function) -> [Option<Function>; 0] {
         []
     }
 
@@ -925,7 +925,7 @@ impl NaryOperator<0> for NullaryMapOperator {
     }
 }
 
-impl NaryOperator<1> for UnaryMapOperator {
+impl Compose<1> for UnaryMapOperator {
     fn input(&self) -> &[TensorDesc; 1] {
         &self.input
     }
@@ -934,7 +934,7 @@ impl NaryOperator<1> for UnaryMapOperator {
         &self.output
     }
 
-    fn grad(&self, x: [&Var; 1], y: &Var, gy: &Var) -> [Option<Var>; 1] {
+    fn grad(&self, x: [&Function; 1], y: &Function, gy: &Function) -> [Option<Function>; 1] {
         let x = x[0];
         [match self.map {
             UnaryMap::Copy => Some(gy.clone()),
@@ -1002,7 +1002,7 @@ impl NaryOperator<1> for UnaryMapOperator {
     }
 }
 
-impl NaryOperator<2> for BinaryMapOperator {
+impl Compose<2> for BinaryMapOperator {
     fn input(&self) -> &[TensorDesc; 2] {
         &self.input
     }
@@ -1011,7 +1011,7 @@ impl NaryOperator<2> for BinaryMapOperator {
         &self.output
     }
 
-    fn grad(&self, x: [&Var; 2], _: &Var, gy: &Var) -> [Option<Var>; 2] {
+    fn grad(&self, x: [&Function; 2], _: &Function, gy: &Function) -> [Option<Function>; 2] {
         match self.map {
             BinaryMap::Add => [Some(gy.clone()), Some(gy.clone())],
             BinaryMap::Sub => [Some(gy.clone()), Some(-gy.clone())],
@@ -1082,7 +1082,7 @@ impl NaryOperator<2> for BinaryMapOperator {
     }
 }
 
-impl NaryOperator<3> for TernaryMapOperator {
+impl Compose<3> for TernaryMapOperator {
     fn input(&self) -> &[TensorDesc; 3] {
         &self.input
     }
@@ -1091,7 +1091,7 @@ impl NaryOperator<3> for TernaryMapOperator {
         &self.output
     }
 
-    fn grad(&self, x: [&Var; 3], _: &Var, gy: &Var) -> [Option<Var>; 3] {
+    fn grad(&self, x: [&Function; 3], _: &Function, gy: &Function) -> [Option<Function>; 3] {
         match self.map {
             TernaryMap::Cond => [Some(cond(x[0], gy, 0.0)), Some(cond(x[0], 0.0, gy)), None],
             _ => [None, None, None],
@@ -1124,7 +1124,7 @@ impl NaryOperator<3> for TernaryMapOperator {
     }
 }
 
-impl VariadicOperator for VariadicMapOperator {
+impl VariadicCompose for VariadicMapOperator {
     fn input(&self) -> &[TensorDesc] {
         &self.input
     }
@@ -1133,7 +1133,7 @@ impl VariadicOperator for VariadicMapOperator {
         &self.output
     }
 
-    fn grad(&self, _: &[Var], _: &Var, _: &Var) -> Vec<Option<Var>> {
+    fn grad(&self, _: &[Function], _: &Function, _: &Function) -> Vec<Option<Function>> {
         // non-differentiable
         panic!("variadic map operators cannot be differentiated")
     }
@@ -1181,21 +1181,21 @@ impl VariadicOperator for VariadicMapOperator {
 
 ///
 
-impl<T> ops::Add<T> for Var
+impl<T> ops::Add<T> for Function
     where
         T: Variable,
 {
-    type Output = Var;
+    type Output = Function;
     fn add(self, x: T) -> Self::Output {
         add(self, x)
     }
 }
 
-impl<T> ops::Add<T> for &Var
+impl<T> ops::Add<T> for &Function
     where
         T: Variable,
 {
-    type Output = Var;
+    type Output = Function;
     fn add(self, x: T) -> Self::Output {
         add(self, x)
     }
@@ -1205,7 +1205,7 @@ impl<T> ops::Add<T> for Tensor
     where
         T: Variable,
 {
-    type Output = Var;
+    type Output = Function;
     fn add(self, x: T) -> Self::Output {
         add(self, x)
     }
@@ -1215,7 +1215,7 @@ impl<T> ops::Add<T> for &Tensor
     where
         T: Variable,
 {
-    type Output = Var;
+    type Output = Function;
     fn add(self, x: T) -> Self::Output {
         add(self, x)
     }
@@ -1224,21 +1224,21 @@ impl<T> ops::Add<T> for &Tensor
 /// SUB
 ///
 ///
-impl<T> ops::Sub<T> for Var
+impl<T> ops::Sub<T> for Function
     where
         T: Variable,
 {
-    type Output = Var;
+    type Output = Function;
     fn sub(self, x: T) -> Self::Output {
         sub(self, x)
     }
 }
 
-impl<T> ops::Sub<T> for &Var
+impl<T> ops::Sub<T> for &Function
     where
         T: Variable,
 {
-    type Output = Var;
+    type Output = Function;
     fn sub(self, x: T) -> Self::Output {
         sub(self, x)
     }
@@ -1248,7 +1248,7 @@ impl<T> ops::Sub<T> for Tensor
     where
         T: Variable,
 {
-    type Output = Var;
+    type Output = Function;
     fn sub(self, x: T) -> Self::Output {
         sub(self, x)
     }
@@ -1258,7 +1258,7 @@ impl<T> ops::Sub<T> for &Tensor
     where
         T: Variable,
 {
-    type Output = Var;
+    type Output = Function;
     fn sub(self, x: T) -> Self::Output {
         sub(self, x)
     }
@@ -1266,21 +1266,21 @@ impl<T> ops::Sub<T> for &Tensor
 
 /// MUL
 ///
-impl<T> ops::Mul<T> for Var
+impl<T> ops::Mul<T> for Function
     where
         T: Variable,
 {
-    type Output = Var;
+    type Output = Function;
     fn mul(self, x: T) -> Self::Output {
         mul(self, x)
     }
 }
 
-impl<T> ops::Mul<T> for &Var
+impl<T> ops::Mul<T> for &Function
     where
         T: Variable,
 {
-    type Output = Var;
+    type Output = Function;
     fn mul(self, x: T) -> Self::Output {
         mul(self, x)
     }
@@ -1290,7 +1290,7 @@ impl<T> ops::Mul<T> for &Tensor
     where
         T: Variable,
 {
-    type Output = Var;
+    type Output = Function;
     fn mul(self, x: T) -> Self::Output {
         mul(self, x)
     }
@@ -1298,21 +1298,21 @@ impl<T> ops::Mul<T> for &Tensor
 
 // Div
 
-impl<T> ops::Div<T> for Var
+impl<T> ops::Div<T> for Function
     where
         T: Variable,
 {
-    type Output = Var;
+    type Output = Function;
     fn div(self, x: T) -> Self::Output {
         div(self, x)
     }
 }
 
-impl<T> ops::Div<T> for &Var
+impl<T> ops::Div<T> for &Function
     where
         T: Variable,
 {
-    type Output = Var;
+    type Output = Function;
     fn div(self, x: T) -> Self::Output {
         div(self, x)
     }
@@ -1322,7 +1322,7 @@ impl<T> ops::Div<T> for Tensor
     where
         T: Variable,
 {
-    type Output = Var;
+    type Output = Function;
     fn div(self, x: T) -> Self::Output {
         div(self, x)
     }
@@ -1332,23 +1332,23 @@ impl<T> ops::Div<T> for &Tensor
     where
         T: Variable,
 {
-    type Output = Var;
+    type Output = Function;
     fn div(self, x: T) -> Self::Output {
         div(self, x)
     }
 }
 
 // Neg
-impl ops::Neg for Var {
-    type Output = Var;
+impl ops::Neg for Function {
+    type Output = Function;
 
     fn neg(self) -> Self::Output {
         neg(self)
     }
 }
 
-impl ops::Neg for &Var {
-    type Output = Var;
+impl ops::Neg for &Function {
+    type Output = Function;
 
     fn neg(self) -> Self::Output {
         neg(self)
@@ -1356,7 +1356,7 @@ impl ops::Neg for &Var {
 }
 
 impl ops::Neg for Tensor {
-    type Output = Var;
+    type Output = Function;
 
     fn neg(self) -> Self::Output {
         neg(self)
@@ -1364,7 +1364,7 @@ impl ops::Neg for Tensor {
 }
 
 impl ops::Neg for &Tensor {
-    type Output = Var;
+    type Output = Function;
 
     fn neg(self) -> Self::Output {
         neg(self)
@@ -1377,7 +1377,7 @@ mod tests {
     use crate::ops::map::{add, cond, div, gt, max, min, modular, mul, neg, pow, scalar, sin, sub};
     use crate::session::context::Context;
     use crate::tensor::Tensor;
-    use crate::var::{grad_check, Var};
+    use crate::var::{grad_check, Function};
 
     #[test]
     pub fn test_nullary_map() {
@@ -1439,7 +1439,7 @@ mod tests {
         let y = sin(transpose(&x, 0, 1)).eval(&mut ctx);
         assert!(Tensor::all_close(&y, &y_gt.transpose(0, 1), 0.001));
 
-        let x = Var::new(x);
+        let x = Function::new(x);
 
         let y = x.abs();
         assert!(grad_check(&y, &x, 0.01, &mut ctx));
@@ -1581,8 +1581,8 @@ mod tests {
         assert!(Tensor::all_close(&y, &y_gt.transpose(0, 1), 0.001));
 
         // check gradients
-        let x1 = Var::new(x1);
-        let x2 = Var::new(x2);
+        let x1 = Function::new(x1);
+        let x2 = Function::new(x2);
 
         let y = add(&x1, &x2);
         assert!(grad_check(&y, &x1, 0.01, &mut ctx));
