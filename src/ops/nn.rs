@@ -1,6 +1,6 @@
 use crate::ops::map::{ge, gt, sign};
 use crate::shape::{Axes, Extent};
-use crate::var::{Function, Variable};
+use crate::var::{Fun, ToFun};
 
 // nn
 
@@ -30,21 +30,21 @@ struct SoftmaxCrossEntropy;
 
 struct BinaryCrossEntropy;
 
-pub fn relu<V>(x: V) -> Function
+pub fn relu<V>(x: V) -> Fun
 where
-    V: Variable,
+    V: ToFun,
 {
-    let x = x.into_var();
+    let x = x.to_fun();
 
     gt(&x, 0.0).float() * x
 }
 
-pub fn softmax<V, A>(x: V, axes: A) -> Function
+pub fn softmax<V, A>(x: V, axes: A) -> Fun
 where
-    V: Variable,
+    V: ToFun,
     A: Axes,
 {
-    let x = x.into_var();
+    let x = x.to_fun();
     let axes = axes.to_arr(x.rank()).unwrap();
 
     // For numerical stability
@@ -55,25 +55,25 @@ where
     y / sum
 }
 
-pub fn log_sum_exp<V, A>(x: V, axes: A) -> Function
+pub fn log_sum_exp<V, A>(x: V, axes: A) -> Fun
 where
-    V: Variable,
+    V: ToFun,
     A: Axes,
 {
-    let x = x.into_var();
+    let x = x.to_fun();
     let axes = axes.to_arr(x.rank()).unwrap();
 
     let c = x.max(&axes, true);
     (x - &c).exp().sum(&axes, true).log() + c
 }
 
-pub fn softmax_cross_entropy<V1, V2>(x1: V1, x2: V2) -> Function
+pub fn softmax_cross_entropy<V1, V2>(x1: V1, x2: V2) -> Fun
 where
-    V1: Variable,
-    V2: Variable,
+    V1: ToFun,
+    V2: ToFun,
 {
-    let x1 = x1.into_var();
-    let x2 = x2.into_var();
+    let x1 = x1.to_fun();
+    let x2 = x2.to_fun();
 
     let log_z = &x1 - log_sum_exp(&x1, 1);
     let log_p = log_z.gather(x2, 1); //log_z * x2;
@@ -81,14 +81,14 @@ where
     -log_p.sum(1, false)
 }
 
-pub fn layer_norm<V1, V2, V3, A>(x: V1, axes: A, gamma: V2, beta: V3, eps: f32) -> Function
+pub fn layer_norm<V1, V2, V3, A>(x: V1, axes: A, gamma: V2, beta: V3, eps: f32) -> Fun
 where
-    V1: Variable,
-    V2: Variable,
-    V3: Variable,
+    V1: ToFun,
+    V2: ToFun,
+    V3: ToFun,
     A: Axes,
 {
-    let x = x.into_var();
+    let x = x.to_fun();
     let axes = axes.to_arr(x.rank()).unwrap();
 
     let mean = x.mean(&axes, true);
@@ -105,7 +105,7 @@ mod tests {
     use crate::ops::nn::{relu, softmax, softmax_cross_entropy};
     use crate::session::context::Context;
     use crate::tensor::Tensor;
-    use crate::var::{grad_check, Function};
+    use crate::var::{grad_check, Fun};
 
     #[test]
     fn test_relu() {
@@ -123,7 +123,7 @@ mod tests {
             [0.0165, 1.7377, 0.0000],
             [0.0494, 0.0000, 0.5780],
         ]);
-        let x = Function::new(x);
+        let x = Fun::new(x);
         let y = relu(&x);
         assert!(Tensor::all_close(&y.eval(&mut ctx), &y_gt, 0.001));
         assert!(grad_check(&y, &x, 0.01, &mut ctx));
@@ -147,7 +147,7 @@ mod tests {
         ])
         .to_device(&mut ctx);
 
-        let x = Function::new(x);
+        let x = Fun::new(x);
         let y = softmax(&x, 1);
         assert!(Tensor::all_close(&y.eval(&mut ctx), &y_gt, 0.001));
         assert!(grad_check(&y, &x, 0.01, &mut ctx));
@@ -196,7 +196,7 @@ mod tests {
             ],
         ]);
 
-        let x = Function::new(x);
+        let x = Fun::new(x);
 
         let loss_gt = Tensor::new([2.1987, 0.9184, 2.2250, 2.6592, 2.8357]).to_device(&mut ctx);
 
@@ -338,7 +338,7 @@ mod tests {
             ],
         ]);
 
-        let x = Function::new(x);
+        let x = Fun::new(x);
 
         let y = max_pool_2d(&x, 3, 1, 0, 1);
 

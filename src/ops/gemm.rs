@@ -4,7 +4,7 @@ use crate::ops::{Category, Compose, Composer};
 use crate::session::context::{CachedAccess, Context};
 use crate::shape::{Array, Shape};
 use crate::tensor::{Tensor, TensorDesc};
-use crate::var::{Function, Variable};
+use crate::var::{Fun, ToFun};
 use smallvec::ToSmallVec;
 use std::cmp::min;
 use std::time::Instant;
@@ -27,13 +27,13 @@ struct GemmBatched {
     cached: CachedAccess,
 }
 
-pub fn matmul<V1, V2>(x1: V1, x2: V2) -> Function
+pub fn matmul<V1, V2>(x1: V1, x2: V2) -> Fun
 where
-    V1: Variable,
-    V2: Variable,
+    V1: ToFun,
+    V2: ToFun,
 {
-    let x1 = x1.into_var();
-    let x2 = x2.into_var();
+    let x1 = x1.to_fun();
+    let x2 = x2.to_fun();
 
     //println!("{:?}", x1.extents());
     //println!("{:?}", x2.extents());
@@ -50,13 +50,13 @@ where
     gemm(x1, x2, false, false).view(ext)
 }
 
-pub fn matmul_batched<V1, V2>(x1: V1, x2: V2) -> Function
+pub fn matmul_batched<V1, V2>(x1: V1, x2: V2) -> Fun
 where
-    V1: Variable,
-    V2: Variable,
+    V1: ToFun,
+    V2: ToFun,
 {
-    let x1 = x1.into_var();
-    let x2 = x2.into_var();
+    let x1 = x1.to_fun();
+    let x2 = x2.to_fun();
 
     // find same dims
     let mut batch_ext = Array::new();
@@ -103,13 +103,13 @@ where
     gemm_batched(x1, x2, false, false).view(ext)
 }
 
-pub fn gemm<V1, V2>(x1: V1, x2: V2, t1: bool, t2: bool) -> Function
+pub fn gemm<V1, V2>(x1: V1, x2: V2, t1: bool, t2: bool) -> Fun
 where
-    V1: Variable,
-    V2: Variable,
+    V1: ToFun,
+    V2: ToFun,
 {
-    let x1 = x1.into_var().organize();
-    let x2 = x2.into_var().organize();
+    let x1 = x1.to_fun().organize();
+    let x2 = x2.to_fun().organize();
     assert_eq!(x1.data_type(), x2.data_type());
 
     let x1_ext = x1.extents();
@@ -123,7 +123,7 @@ where
     };
     assert_eq!(chan1, chan2);
 
-    Function::from_binary_op(
+    Fun::from_binary_op(
         Gemm {
             input: [x1.desc().clone(), x2.desc().clone()],
             output: TensorDesc {
@@ -148,7 +148,7 @@ impl Compose<2> for Gemm {
         &self.output
     }
 
-    fn grad(&self, x: [&Function; 2], _: &Function, gy: &Function) -> [Option<Function>; 2] {
+    fn grad(&self, x: [&Fun; 2], _: &Fun, gy: &Fun) -> [Option<Fun>; 2] {
         let (gx1, gx2) = match (self.transpose_a, self.transpose_b) {
             (false, false) => (gemm(gy, x[1], false, true), gemm(x[0], gy, true, false)),
             (false, true) => (gemm(gy, x[1], false, false), gemm(gy, x[0], true, false)),
@@ -250,13 +250,13 @@ impl Gemm {
     }
 }
 
-pub fn gemm_batched<V1, V2>(x1: V1, x2: V2, t1: bool, t2: bool) -> Function
+pub fn gemm_batched<V1, V2>(x1: V1, x2: V2, t1: bool, t2: bool) -> Fun
 where
-    V1: Variable,
-    V2: Variable,
+    V1: ToFun,
+    V2: ToFun,
 {
-    let x1 = x1.into_var().organize();
-    let x2 = x2.into_var().organize();
+    let x1 = x1.to_fun().organize();
+    let x2 = x2.to_fun().organize();
 
     assert_eq!(x1.extent(0), x2.extent(0));
     assert_eq!(x1.data_type(), x2.data_type());
@@ -273,7 +273,7 @@ where
     };
     assert_eq!(chan1, chan2);
 
-    Function::from_binary_op(
+    Fun::from_binary_op(
         GemmBatched {
             input: [x1.desc().clone(), x2.desc().clone()],
             output: TensorDesc {
@@ -298,7 +298,7 @@ impl Compose<2> for GemmBatched {
         &self.output
     }
 
-    fn grad(&self, x: [&Function; 2], _: &Function, gy: &Function) -> [Option<Function>; 2] {
+    fn grad(&self, x: [&Fun; 2], _: &Fun, gy: &Fun) -> [Option<Fun>; 2] {
         let (gx1, gx2) = match (self.transpose_a, self.transpose_b) {
             (false, false) => (
                 gemm_batched(gy, x[1], false, true),
@@ -426,7 +426,7 @@ mod tests {
     use crate::ops::gemm::gemm;
     use crate::session::context::Context;
     use crate::tensor::Tensor;
-    use crate::var::{grad_check, Function};
+    use crate::var::{grad_check, Fun};
 
     #[test]
     fn test_gemm() {
@@ -574,8 +574,8 @@ mod tests {
 
         //let a = Tensor::ones([5, 5]).to_device(&ctx);
         //let b = Tensor::ones([5, 5]).to_device(&ctx);
-        let a = Function::new(a);
-        let b = Function::new(b);
+        let a = Fun::new(a);
+        let b = Fun::new(b);
         let c = gemm(&a, &b, false, false);
         assert!(Tensor::all_close(&c.eval(&mut ctx), &c_gt, 0.001));
 
@@ -708,8 +708,8 @@ mod tests {
         let c = gemm(&a, &b, true, true).eval(&mut ctx);
         assert!(Tensor::all_close(&c, &ctt_gt, 0.001));
 
-        let a = Function::new(a);
-        let b = Function::new(b);
+        let a = Fun::new(a);
+        let b = Fun::new(b);
 
         // gemm grads
 

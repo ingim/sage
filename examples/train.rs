@@ -10,7 +10,7 @@ use sage::session::device::Device;
 use sage::session::Program;
 use sage::tensor::data::DataType;
 use sage::tensor::Tensor;
-use sage::var::{grad_param, Function};
+use sage::var::{grad_param, Fun};
 
 fn main() {
     println!("{:?}", Device::get_list());
@@ -33,8 +33,8 @@ fn main() {
     model.init(&mut ctx, 0);
     optimizer.init(&mut ctx);
 
-    let input = Function::empty([batch_size, 28, 28, 1], DataType::Float);
-    let label = Function::empty([batch_size, 1], DataType::Uint);
+    let input = Fun::empty([batch_size, 28, 28, 1], DataType::Float);
+    let label = Fun::empty([batch_size, 1], DataType::Uint);
 
     let logits = model.pass(&input);
 

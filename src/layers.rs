@@ -6,18 +6,18 @@ use crate::shape::{Array, Axes, Extent, SizedExtent};
 use crate::tensor::data::DataType;
 use crate::tensor::init::{kaiming_normal, kaiming_uniform};
 use crate::tensor::Tensor;
-use crate::var::Function;
+use crate::var::Fun;
 use itertools::Itertools;
 use std::fmt::{Debug, Formatter};
 use std::time::Instant;
 
 pub trait Parameter {
     fn init(&mut self, ctx: &mut Context, level: usize) {}
-    fn params<'a>(&'a self, p: &mut Vec<&'a Function>) {}
+    fn params<'a>(&'a self, p: &mut Vec<&'a Fun>) {}
 }
 
 pub trait Layer: Parameter {
-    fn pass(&self, x: &Function) -> Function;
+    fn pass(&self, x: &Fun) -> Fun;
 }
 
 pub struct Filter<const N: usize> {
@@ -75,7 +75,7 @@ impl MaxPool2d {
 impl Parameter for MaxPool2d {}
 
 impl Layer for MaxPool2d {
-    fn pass(&self, x: &Function) -> Function {
+    fn pass(&self, x: &Fun) -> Fun {
         max_pool_2d(
             x,
             self.0.kernel_size,
@@ -109,7 +109,7 @@ impl AvgPool2d {
 impl Parameter for AvgPool2d {}
 
 impl Layer for AvgPool2d {
-    fn pass(&self, x: &Function) -> Function {
+    fn pass(&self, x: &Fun) -> Fun {
         avg_pool_2d(
             x,
             self.0.kernel_size,
@@ -139,7 +139,7 @@ impl AdaptiveAvgPool2d {
 impl Parameter for AdaptiveAvgPool2d {}
 
 impl Layer for AdaptiveAvgPool2d {
-    fn pass(&self, x: &Function) -> Function {
+    fn pass(&self, x: &Fun) -> Fun {
         let (inp_w, inp_h) = (x.extent(2), x.extent(1));
         let (out_w, out_h) = (self.extents[0], self.extents[1]);
 
@@ -171,7 +171,7 @@ impl AdaptiveMaxPool2d {
 impl Parameter for AdaptiveMaxPool2d {}
 
 impl Layer for AdaptiveMaxPool2d {
-    fn pass(&self, x: &Function) -> Function {
+    fn pass(&self, x: &Fun) -> Fun {
         let (inp_w, inp_h) = (x.extent(2), x.extent(1));
         let (out_w, out_h) = (self.extents[0], self.extents[1]);
 
@@ -190,7 +190,7 @@ pub struct Relu;
 impl Parameter for Relu {}
 
 impl Layer for Relu {
-    fn pass(&self, x: &Function) -> Function {
+    fn pass(&self, x: &Fun) -> Fun {
         relu(x)
     }
 }
@@ -200,21 +200,21 @@ pub struct Flatten;
 impl Parameter for Flatten {}
 
 impl Layer for Flatten {
-    fn pass(&self, x: &Function) -> Function {
+    fn pass(&self, x: &Fun) -> Fun {
         x.view([x.extent(0) as i32, -1]).name("flatten")
     }
 }
 
 pub struct Dense {
-    pub weight: Function,
-    pub bias: Function,
+    pub weight: Fun,
+    pub bias: Fun,
 }
 
 impl Dense {
     pub fn new(dim_in: usize, dim_out: usize) -> Self {
         Dense {
-            weight: Function::empty([dim_in, dim_out], DataType::Float).name("dense.weight"),
-            bias: Function::empty(dim_out, DataType::Float).name("dense.bias"),
+            weight: Fun::empty([dim_in, dim_out], DataType::Float).name("dense.weight"),
+            bias: Fun::empty(dim_out, DataType::Float).name("dense.bias"),
         }
     }
 }
@@ -234,14 +234,14 @@ impl Parameter for Dense {
         println!("{indent} {:?} ({:.2?})", &self.bias, now.elapsed());
     }
 
-    fn params<'a>(&'a self, p: &mut Vec<&'a Function>) {
+    fn params<'a>(&'a self, p: &mut Vec<&'a Fun>) {
         p.push(&self.weight);
         p.push(&self.bias);
     }
 }
 
 impl Layer for Dense {
-    fn pass(&self, x: &Function) -> Function {
+    fn pass(&self, x: &Fun) -> Fun {
         (x.matmul(&self.weight) + &self.bias).name("dense")
     }
 }
@@ -264,7 +264,7 @@ impl Softmax {
 impl Parameter for Softmax {}
 
 impl Layer for Softmax {
-    fn pass(&self, x: &Function) -> Function {
+    fn pass(&self, x: &Fun) -> Fun {
         //println!("{:?}", x.extents());
         //println!("{:?}", &self.axes);
 
@@ -307,7 +307,7 @@ impl Parameter for Sequential {
             layer.init(ctx, level + 1);
         }
     }
-    fn params<'a>(&'a self, p: &mut Vec<&'a Function>) {
+    fn params<'a>(&'a self, p: &mut Vec<&'a Fun>) {
         for layer in self.layers.iter() {
             layer.params(p)
         }
@@ -315,7 +315,7 @@ impl Parameter for Sequential {
 }
 
 impl Layer for Sequential {
-    fn pass(&self, x: &Function) -> Function {
+    fn pass(&self, x: &Fun) -> Fun {
         let mut x = x.clone();
         for layer in self.layers.iter() {
             x = layer.pass(&x);
@@ -325,8 +325,8 @@ impl Layer for Sequential {
 }
 
 pub struct Conv2d {
-    pub weight: Function,
-    pub bias: Function,
+    pub weight: Fun,
+    pub bias: Fun,
 
     pub filter: Filter<2>,
 }
@@ -359,12 +359,12 @@ impl Conv2d {
     {
         Conv2d {
             //(KH, KW, C, OC)
-            weight: Function::empty(
+            weight: Fun::empty(
                 [kernel_size.at(1), kernel_size.at(0), chan_in, chan_out],
                 DataType::Float,
             )
             .name("conv2d.weight"),
-            bias: Function::empty(chan_out, DataType::Float).name("conv2d.bias"),
+            bias: Fun::empty(chan_out, DataType::Float).name("conv2d.bias"),
             filter: Filter::with(kernel_size, stride, padding, dilation),
         }
     }
@@ -384,14 +384,14 @@ impl Parameter for Conv2d {
         println!("{indent} {:?} ({:.2?})", &self.bias, now.elapsed());
     }
 
-    fn params<'a>(&'a self, p: &mut Vec<&'a Function>) {
+    fn params<'a>(&'a self, p: &mut Vec<&'a Fun>) {
         p.push(&self.weight);
         p.push(&self.bias);
     }
 }
 
 impl Layer for Conv2d {
-    fn pass(&self, x: &Function) -> Function {
+    fn pass(&self, x: &Fun) -> Fun {
         (conv_2d(
             x,
             &self.weight,
@@ -406,7 +406,7 @@ impl Layer for Conv2d {
 pub struct Embedding {
     pub num_embeddings: usize,
     pub embedding_dim: usize,
-    pub weight: Function,
+    pub weight: Fun,
 }
 
 impl Embedding {
@@ -414,14 +414,14 @@ impl Embedding {
         Embedding {
             num_embeddings,
             embedding_dim,
-            weight: Function::empty([num_embeddings, embedding_dim], DataType::Float)
+            weight: Fun::empty([num_embeddings, embedding_dim], DataType::Float)
                 .name("embedding.weight"),
         }
     }
 }
 
 impl Layer for Embedding {
-    fn pass(&self, idx: &Function) -> Function {
+    fn pass(&self, idx: &Fun) -> Fun {
         // (512, 768) g (64, 768) -> (64, 768)
         //println!("{:?}", idx.extents());
         //println!("{:?}", [idx.extent(0), self.embedding_dim]);
@@ -471,7 +471,7 @@ impl Parameter for Embedding {
         println!("{indent} {:?} ({:.2?})", &self.weight, now.elapsed());
     }
 
-    fn params<'a>(&'a self, p: &mut Vec<&'a Function>) {
+    fn params<'a>(&'a self, p: &mut Vec<&'a Fun>) {
         p.push(&self.weight);
     }
 }
@@ -480,14 +480,14 @@ pub struct BatchNorm2d {
     num_features: usize,
     eps: f32,
 
-    gamma: Function,
-    beta: Function,
+    gamma: Fun,
+    beta: Fun,
 
     // average batch mean
-    running_mean: Function,
+    running_mean: Fun,
 
     // average batch variance
-    running_var: Function,
+    running_var: Fun,
 }
 
 impl BatchNorm2d {
@@ -495,11 +495,11 @@ impl BatchNorm2d {
         BatchNorm2d {
             num_features,
             eps,
-            gamma: Function::empty([1], DataType::Float).name("batch_norm_2d.gamma"),
-            beta: Function::empty([1], DataType::Float).name("batch_norm_2d.beta"),
-            running_mean: Function::empty([num_features], DataType::Float)
+            gamma: Fun::empty([1], DataType::Float).name("batch_norm_2d.gamma"),
+            beta: Fun::empty([1], DataType::Float).name("batch_norm_2d.beta"),
+            running_mean: Fun::empty([num_features], DataType::Float)
                 .name("batch_norm_2d.running_mean"),
-            running_var: Function::empty([num_features], DataType::Float)
+            running_var: Fun::empty([num_features], DataType::Float)
                 .name("batch_norm_2d.running_var"),
         }
     }
@@ -525,14 +525,14 @@ impl Parameter for BatchNorm2d {
         let now = Instant::now();
     }
 
-    fn params<'a>(&'a self, p: &mut Vec<&'a Function>) {
+    fn params<'a>(&'a self, p: &mut Vec<&'a Fun>) {
         p.push(&self.gamma);
         p.push(&self.beta);
     }
 }
 
 impl Layer for BatchNorm2d {
-    fn pass(&self, x: &Function) -> Function {
+    fn pass(&self, x: &Fun) -> Fun {
         batch_norm_2d(
             x,
             &self.gamma,
@@ -548,8 +548,8 @@ impl Layer for BatchNorm2d {
 pub struct LayerNorm {
     axes: Array,
     eps: f32,
-    gamma: Function,
-    beta: Function,
+    gamma: Fun,
+    beta: Fun,
 }
 
 impl LayerNorm {
@@ -560,8 +560,8 @@ impl LayerNorm {
         LayerNorm {
             axes: axes.to_arr(90).unwrap(),
             eps,
-            gamma: Function::empty([1], DataType::Float).name("layer_norm.gamma"),
-            beta: Function::empty([1], DataType::Float).name("layer_norm.beta"),
+            gamma: Fun::empty([1], DataType::Float).name("layer_norm.gamma"),
+            beta: Fun::empty([1], DataType::Float).name("layer_norm.beta"),
         }
     }
 }
@@ -577,14 +577,14 @@ impl Parameter for LayerNorm {
         println!("{indent} {:?} ({:.2?})", &self.beta, now.elapsed());
     }
 
-    fn params<'a>(&'a self, p: &mut Vec<&'a Function>) {
+    fn params<'a>(&'a self, p: &mut Vec<&'a Fun>) {
         p.push(&self.gamma);
         p.push(&self.beta);
     }
 }
 
 impl Layer for LayerNorm {
-    fn pass(&self, x: &Function) -> Function {
+    fn pass(&self, x: &Fun) -> Fun {
         layer_norm(x, &self.axes, &self.gamma, &self.beta, 1e-05).name("layer_norm")
     }
 }
@@ -603,7 +603,7 @@ impl Dropout {
 impl Parameter for Dropout {}
 
 impl Layer for Dropout {
-    fn pass(&self, x: &Function) -> Function {
+    fn pass(&self, x: &Fun) -> Fun {
         x.clone()
     }
 }
@@ -613,7 +613,7 @@ mod tests {
     use crate::layers::{Embedding, Layer, Parameter};
     use crate::session::context::Context;
     use crate::tensor::Tensor;
-    use crate::var::Variable;
+    use crate::var::ToFun;
 
     #[test]
     fn test_embedding() {
@@ -622,7 +622,7 @@ mod tests {
         let mut emb = Embedding::new(10, 24);
         emb.init(&mut ctx, 0);
 
-        let idx = Tensor::new([0, 1, 2, 3]).to_device(&mut ctx).into_var();
+        let idx = Tensor::new([0, 1, 2, 3]).to_device(&mut ctx).to_fun();
         let y = emb.pass(&idx.view([4, 1]));
         let y_gt = emb.weight.slice(0, 0, 4);
 

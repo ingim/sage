@@ -4,7 +4,7 @@ use crate::layers::{
 };
 use crate::ops::core::concat;
 use crate::session::context::Context;
-use crate::var::Function;
+use crate::var::Fun;
 use std::cmp::max;
 
 fn make_divisible(val: usize, div: usize, min_val: usize) -> usize {
@@ -83,13 +83,13 @@ impl Parameter for MobileNetV2 {
     fn init(&mut self, ctx: &mut Context, level: usize) {
         self.0.init(ctx, level)
     }
-    fn params<'a>(&'a self, p: &mut Vec<&'a Function>) {
+    fn params<'a>(&'a self, p: &mut Vec<&'a Fun>) {
         self.0.params(p);
     }
 }
 
 impl Layer for MobileNetV2 {
-    fn pass(&self, x: &Function) -> Function {
+    fn pass(&self, x: &Fun) -> Fun {
         self.0.pass(x)
     }
 }
@@ -122,13 +122,13 @@ impl Parameter for InvertedResidual {
     fn init(&mut self, ctx: &mut Context, level: usize) {
         self.0.init(ctx, level)
     }
-    fn params<'a>(&'a self, p: &mut Vec<&'a Function>) {
+    fn params<'a>(&'a self, p: &mut Vec<&'a Fun>) {
         self.0.params(p);
     }
 }
 
 impl Layer for InvertedResidual {
-    fn pass(&self, x: &Function) -> Function {
+    fn pass(&self, x: &Fun) -> Fun {
         if self.1 {
             x + self.0.pass(x)
         } else {

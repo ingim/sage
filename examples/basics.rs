@@ -1,6 +1,6 @@
 use sage::session::context::Context;
 use sage::tensor::Tensor;
-use sage::var::Function;
+use sage::var::Fun;
 
 fn main() {
 
@@ -15,9 +15,9 @@ fn main() {
     ]).to_device(&mut ctx);
 
     // Variables hold (un)evaluated tensors.
-    let x = Function::new(x_data);
+    let x = Fun::new(x_data);
 
-    let y = Function::new(Tensor::new([
+    let y = Fun::new(Tensor::new([
         [0.5173, -0.9896, -0.7773],
         [0.1546, -0.7499, 0.2420],
         [-1.6632, 1.0712, -0.2654],

@@ -5,7 +5,7 @@ use crate::session::context::Context;
 use crate::shape::{Array, Extent, Shape};
 use crate::tensor::data::DataType;
 use crate::tensor::{Tensor, TensorDesc};
-use crate::var::Function;
+use crate::var::Fun;
 use rand::Rng;
 
 #[derive(Clone, Debug)]
@@ -18,20 +18,20 @@ struct Normal {
     output: TensorDesc,
 }
 
-pub fn uniform<E>(extents: E) -> Function
+pub fn uniform<E>(extents: E) -> Fun
 where
     E: Extent,
 {
-    Function::from_nullary_op(Uniform {
+    Fun::from_nullary_op(Uniform {
         output: TensorDesc::new(extents, DataType::Float),
     })
 }
 
-pub fn normal<E>(extents: E) -> Function
+pub fn normal<E>(extents: E) -> Fun
 where
     E: Extent,
 {
-    Function::from_nullary_op(Normal {
+    Fun::from_nullary_op(Normal {
         output: TensorDesc::new(extents, DataType::Float),
     })
 }
@@ -56,7 +56,7 @@ impl Compose<0> for Uniform {
         &self.output
     }
 
-    fn grad(&self, _: [&Function; 0], _: &Function, _: &Function) -> [Option<Function>; 0] {
+    fn grad(&self, _: [&Fun; 0], _: &Fun, _: &Fun) -> [Option<Fun>; 0] {
         []
     }
 
@@ -99,7 +99,7 @@ impl Compose<0> for Normal {
         &self.output
     }
 
-    fn grad(&self, _: [&Function; 0], _: &Function, _: &Function) -> [Option<Function>; 0] {
+    fn grad(&self, _: [&Fun; 0], _: &Fun, _: &Fun) -> [Option<Fun>; 0] {
         []
     }
     fn compute(&self, _: [&Tensor; 0], ctx: &mut Context) -> Result<Tensor, Error> {

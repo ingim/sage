@@ -1,14 +1,14 @@
 use crate::ops::map::scalar;
 use crate::session::context::Context;
 use crate::tensor::Tensor;
-use crate::var::Function;
+use crate::var::Fun;
 use std::collections::HashMap;
 use std::time::Instant;
 
 pub trait Optimizer {
     fn init(&mut self, ctx: &mut Context);
 
-    fn update(&mut self, grads: &HashMap<&Function, Function>, ctx: &mut Context);
+    fn update(&mut self, grads: &HashMap<&Fun, Fun>, ctx: &mut Context);
 }
 
 pub struct Sgd {
@@ -20,8 +20,8 @@ pub struct Sgd {
     // Nestreov momentum: On the importance of initialization and momentum in deep learning
     nesterov: bool,
 
-    b: HashMap<Function, Tensor>, // hashmap to store momentum tensors
-    g: HashMap<Function, Tensor>,
+    b: HashMap<Fun, Tensor>, // hashmap to store momentum tensors
+    g: HashMap<Fun, Tensor>,
 }
 
 // Stochastic Gradient Descent
@@ -45,7 +45,7 @@ impl Optimizer for Sgd {
         self.g.clear();
     }
 
-    fn update(&mut self, grads: &HashMap<&Function, Function>, ctx: &mut Context) {
+    fn update(&mut self, grads: &HashMap<&Fun, Fun>, ctx: &mut Context) {
         //println!("****************************************************");
 
         for (&param, grad) in grads {
@@ -102,8 +102,8 @@ pub struct Adam {
     eps: f32,
     weight_decay: f32,
 
-    m_t: HashMap<Function, Tensor>, // hashmap to store momentum tensors
-    v_t: HashMap<Function, Tensor>,
+    m_t: HashMap<Fun, Tensor>, // hashmap to store momentum tensors
+    v_t: HashMap<Fun, Tensor>,
 }
 
 impl Adam {
@@ -129,7 +129,7 @@ impl Optimizer for Adam {
         self.t = Tensor::from_scalar(1, 1.0).to_device(ctx);
     }
 
-    fn update(&mut self, grads: &HashMap<&Function, Function>, ctx: &mut Context) {
+    fn update(&mut self, grads: &HashMap<&Fun, Fun>, ctx: &mut Context) {
         // let v1 = self.m_t.values().map(|t| t.size()).sum::<usize>() * 4 / (1024 * 1024);
         // let v2 = self.v_t.values().map(|t| t.size()).sum::<usize>() * 4 / (1024 * 1024);
         // println!("{} MB, {}, {}", v1 + v2, self.m_t.len(), self.v_t.len());

@@ -1,6 +1,6 @@
 use sage::session::context::Context;
 use sage::tensor::Tensor;
-use sage::var::{grad, Function};
+use sage::var::{grad, Fun};
 
 fn main() {
     let mut ctx = Context::new();
@@ -12,7 +12,7 @@ fn main() {
     ]).to_device(&mut ctx);
 
     // Variables hold (un)evaluated tensors.
-    let x = Function::new(x_data);
+    let x = Fun::new(x_data);
     let y = (&x + 3.0) * (&x + 5.5);
 
     let gy = grad(&y, [&x]);

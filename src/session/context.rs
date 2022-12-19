@@ -6,7 +6,7 @@ use crate::session::memory::{Allocator, MemoryError};
 use crate::shape::SizedExtent;
 use crate::tensor::data::{DataType, OpenClData};
 use crate::tensor::{Data, Tensor};
-use crate::var::Function;
+use crate::var::Fun;
 use crate::{session};
 use itertools::Itertools;
 use std::borrow::Borrow;
@@ -24,7 +24,7 @@ extern crate ocl;
 
 pub struct Context {
     device: Device,
-    pub data: HashMap<Function, Tensor>,
+    pub data: HashMap<Fun, Tensor>,
 
     // compiled kernels
     kernels: Vec<KernelProgram>,
@@ -55,7 +55,7 @@ impl Context {
         &self.device
     }
 
-    pub fn data(&self) -> &HashMap<Function, Tensor> {
+    pub fn data(&self) -> &HashMap<Fun, Tensor> {
         &self.data
     }
 
@@ -95,10 +95,10 @@ impl Context {
 
     pub fn eval<'a, I>(&mut self, targets: I)
         where
-            I: IntoIterator<Item=&'a Function>,
+            I: IntoIterator<Item=&'a Fun>,
     {
         // get (already evaluated) inputs
-        let y: Vec<&Function> = targets.into_iter().collect_vec();
+        let y: Vec<&Fun> = targets.into_iter().collect_vec();
 
         let mut stack = y.clone();
         let mut x = Vec::new();

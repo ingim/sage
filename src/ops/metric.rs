@@ -1,13 +1,13 @@
 use crate::ops::map::eq;
-use crate::var::{Function, Variable};
+use crate::var::{Fun, ToFun};
 
-pub fn accuracy<V1, V2>(logits: V1, labels: V2) -> Function
+pub fn accuracy<V1, V2>(logits: V1, labels: V2) -> Fun
 where
-    V1: Variable,
-    V2: Variable,
+    V1: ToFun,
+    V2: ToFun,
 {
-    let logits = logits.into_var().argmax(1, true);
-    let labels = labels.into_var();
+    let logits = logits.to_fun().argmax(1, true);
+    let labels = labels.to_fun();
 
     // println!("{:?}",logits );
     // println!("{:?}",labels );

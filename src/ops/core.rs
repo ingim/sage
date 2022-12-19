@@ -3,7 +3,7 @@ use crate::ops;
 use crate::ops::{Category, Compose, VariadicCompose};
 use crate::shape::{display_comma, Array, Axes, Axis, Extent, Shape};
 use crate::tensor::data::{DataLiteral, DataType};
-use crate::var::{Function, Variable};
+use crate::var::{Fun, ToFun};
 use itertools::Itertools;
 use std::time::Instant;
 
@@ -200,27 +200,27 @@ where
 
 ////////////// ---------------------------------------------------
 
-pub fn view<V, E>(x: V, extents: E) -> Function
+pub fn view<V, E>(x: V, extents: E) -> Fun
 where
-    V: Variable,
+    V: ToFun,
     E: Extent,
 {
-    let x = x.into_var();
+    let x = x.to_fun();
     let extents = extents.to_arr(x.size()).unwrap();
     reshape(x, Shape::new(&extents))
 }
 
-pub fn reshape<V>(x: V, shape: Shape) -> Function
+pub fn reshape<V>(x: V, shape: Shape) -> Fun
 where
-    V: Variable,
+    V: ToFun,
 {
-    let x = x.into_var().organize();
+    let x = x.to_fun().organize();
 
     if x.size() != shape.size() {
         panic!("incompatible size");
     }
 
-    Function::from_unary_op(
+    Fun::from_unary_op(
         Reshape {
             input: [x.desc().clone()],
             output: TensorDesc {
@@ -242,7 +242,7 @@ impl Compose<1> for Reshape {
         &self.output
     }
 
-    fn grad(&self, _: [&Function; 1], _: &Function, gy: &Function) -> [Option<Function>; 1] {
+    fn grad(&self, _: [&Fun; 1], _: &Fun, gy: &Fun) -> [Option<Fun>; 1] {
         [Some(reshape(gy, self.input[0].shape.clone()))]
     }
 
@@ -260,15 +260,15 @@ impl Compose<1> for Reshape {
     }
 }
 
-pub fn expand<V, E>(x: V, extents: E) -> Function
+pub fn expand<V, E>(x: V, extents: E) -> Fun
 where
-    V: Variable,
+    V: ToFun,
     E: Extent,
 {
-    let x = x.into_var();
+    let x = x.to_fun();
     let extents = extents.to_arr(0).unwrap();
 
-    Function::from_unary_op(
+    Fun::from_unary_op(
         Expand {
             input: [x.desc().clone()],
             output: TensorDesc {
@@ -289,7 +289,7 @@ impl Compose<1> for Expand {
         &self.output
     }
 
-    fn grad(&self, x: [&Function; 1], _: &Function, gy: &Function) -> [Option<Function>; 1] {
+    fn grad(&self, x: [&Fun; 1], _: &Fun, gy: &Fun) -> [Option<Fun>; 1] {
         // match dims from the backwards
 
         let surplus = gy.rank() - x[0].rank();
@@ -321,20 +321,20 @@ impl Compose<1> for Expand {
     }
 }
 
-pub fn tr<V>(x: V) -> Function
+pub fn tr<V>(x: V) -> Fun
 where
-    V: Variable,
+    V: ToFun,
 {
     transpose(x, 0, 1)
 }
 
-pub fn transpose<V, A1, A2>(x: V, axis1: A1, axis2: A2) -> Function
+pub fn transpose<V, A1, A2>(x: V, axis1: A1, axis2: A2) -> Fun
 where
-    V: Variable,
+    V: ToFun,
     A1: Axis,
     A2: Axis,
 {
-    let x = x.into_var();
+    let x = x.to_fun();
     let rank = x.rank();
 
     let axis1 = axis1.to_usize(rank).unwrap();
@@ -355,15 +355,15 @@ where
     permute(x, axes)
 }
 
-pub fn permute<V, A>(x: V, axes: A) -> Function
+pub fn permute<V, A>(x: V, axes: A) -> Fun
 where
-    V: Variable,
+    V: ToFun,
     A: Axes,
 {
-    let x = x.into_var();
+    let x = x.to_fun();
     let axes = axes.to_arr(x.rank()).unwrap();
 
-    Function::from_unary_op(
+    Fun::from_unary_op(
         Permute {
             input: [x.desc().clone()],
             output: TensorDesc {
@@ -385,7 +385,7 @@ impl Compose<1> for Permute {
         &self.output
     }
 
-    fn grad(&self, _: [&Function; 1], _: &Function, gy: &Function) -> [Option<Function>; 1] {
+    fn grad(&self, _: [&Fun; 1], _: &Fun, gy: &Fun) -> [Option<Fun>; 1] {
         // [A, B, C, D] -> permute(2, 1, 4, 3) -> [B, A, D, C]
         // [B, A, D, C] -> permute(2, 1, 4, 3) -> [A, B, C, D]
 
@@ -397,15 +397,15 @@ impl Compose<1> for Permute {
     }
 }
 
-pub fn squeeze<V, A>(x: V, axis: A) -> Function
+pub fn squeeze<V, A>(x: V, axis: A) -> Fun
 where
-    V: Variable,
+    V: ToFun,
     A: Axis,
 {
-    let mut x = x.into_var();
+    let mut x = x.to_fun();
     let axis = axis.to_usize(x.rank()).unwrap();
 
-    Function::from_unary_op(
+    Fun::from_unary_op(
         Squeeze {
             input: [x.desc().clone()],
             output: TensorDesc {
@@ -427,7 +427,7 @@ impl Compose<1> for Squeeze {
         &self.output
     }
 
-    fn grad(&self, _: [&Function; 1], _: &Function, gy: &Function) -> [Option<Function>; 1] {
+    fn grad(&self, _: [&Fun; 1], _: &Fun, gy: &Fun) -> [Option<Fun>; 1] {
         [Some(unsqueeze(gy, self.axis))]
     }
 
@@ -436,15 +436,15 @@ impl Compose<1> for Squeeze {
     }
 }
 
-pub fn unsqueeze<V, A>(x: V, axis: A) -> Function
+pub fn unsqueeze<V, A>(x: V, axis: A) -> Fun
 where
-    V: Variable,
+    V: ToFun,
     A: Axis,
 {
-    let x = x.into_var();
+    let x = x.to_fun();
     let axis = axis.to_usize(x.rank() + 1).unwrap();
 
-    Function::from_unary_op(
+    Fun::from_unary_op(
         Unsqueeze {
             input: [x.desc().clone()],
             output: TensorDesc {
@@ -466,7 +466,7 @@ impl Compose<1> for Unsqueeze {
         &self.output
     }
 
-    fn grad(&self, _: [&Function; 1], _: &Function, gy: &Function) -> [Option<Function>; 1] {
+    fn grad(&self, _: [&Fun; 1], _: &Fun, gy: &Fun) -> [Option<Fun>; 1] {
         [Some(squeeze(gy, self.axis))]
     }
 
@@ -475,15 +475,15 @@ impl Compose<1> for Unsqueeze {
     }
 }
 
-pub fn slice<V, A>(x: V, axis: A, start: usize, end: usize) -> Function
+pub fn slice<V, A>(x: V, axis: A, start: usize, end: usize) -> Fun
 where
-    V: Variable,
+    V: ToFun,
     A: Axis,
 {
-    let x = x.into_var();
+    let x = x.to_fun();
     let axis = axis.to_usize(x.rank()).unwrap();
 
-    Function::from_unary_op(
+    Fun::from_unary_op(
         Slice {
             input: [x.desc().clone()],
             output: TensorDesc {
@@ -507,7 +507,7 @@ impl Compose<1> for Slice {
         &self.output
     }
 
-    fn grad(&self, x: [&Function; 1], _: &Function, gy: &Function) -> [Option<Function>; 1] {
+    fn grad(&self, x: [&Fun; 1], _: &Fun, gy: &Fun) -> [Option<Fun>; 1] {
         // scatter add
         [Some(unslice(
             gy,
@@ -522,12 +522,12 @@ impl Compose<1> for Slice {
     }
 }
 
-pub fn unslice<V, A>(x: V, axis: A, start: usize, end: usize) -> Function
+pub fn unslice<V, A>(x: V, axis: A, start: usize, end: usize) -> Fun
 where
-    V: Variable,
+    V: ToFun,
     A: Axis,
 {
-    let x = x.into_var();
+    let x = x.to_fun();
     let axis = axis.to_usize(x.rank()).unwrap();
 
     assert!(end >= start + x.extent(axis));
@@ -535,7 +535,7 @@ where
     let mut extents = x.extents().to_vec();
     extents[axis] = end;
 
-    Function::from_unary_op(
+    Fun::from_unary_op(
         Unslice {
             input: [x.desc().clone()],
             output: TensorDesc {
@@ -559,7 +559,7 @@ impl Compose<1> for Unslice {
         &self.output
     }
 
-    fn grad(&self, x: [&Function; 1], _: &Function, gy: &Function) -> [Option<Function>; 1] {
+    fn grad(&self, x: [&Fun; 1], _: &Fun, gy: &Fun) -> [Option<Fun>; 1] {
         [Some(slice(
             gy,
             self.axis,
@@ -610,14 +610,14 @@ impl Compose<1> for Unslice {
     }
 }
 
-pub fn gather<V1, V2, A>(x: V1, ind: V2, axis: A) -> Function
+pub fn gather<V1, V2, A>(x: V1, ind: V2, axis: A) -> Fun
 where
-    V1: Variable,
-    V2: Variable,
+    V1: ToFun,
+    V2: ToFun,
     A: Axis,
 {
-    let x = x.into_var();
-    let ind = ind.into_var();
+    let x = x.to_fun();
+    let ind = ind.to_fun();
     let axis = axis.to_usize(x.rank()).unwrap();
 
     assert_eq!(x.rank(), ind.rank());
@@ -625,7 +625,7 @@ where
     // (164, 100) g0 (64, 100) -> (64, 1)
     assert!((0..x.rank()).any(|i| i == axis || x.extent(i) >= ind.extent(i)));
 
-    Function::from_binary_op(
+    Fun::from_binary_op(
         Gather {
             input: [x.desc().clone(), ind.desc().clone()],
             output: TensorDesc {
@@ -648,7 +648,7 @@ impl Compose<2> for Gather {
         &self.output
     }
 
-    fn grad(&self, x: [&Function; 2], _: &Function, gy: &Function) -> [Option<Function>; 2] {
+    fn grad(&self, x: [&Fun; 2], _: &Fun, gy: &Fun) -> [Option<Fun>; 2] {
         [Some(scatter(gy, x[1], self.axis, x[0].extents())), None]
     }
 
@@ -718,15 +718,15 @@ impl Compose<2> for Gather {
     }
 }
 
-pub fn scatter<V1, V2, A, E>(x: V1, ind: V2, axis: A, extents: E) -> Function
+pub fn scatter<V1, V2, A, E>(x: V1, ind: V2, axis: A, extents: E) -> Fun
 where
-    V1: Variable,
-    V2: Variable,
+    V1: ToFun,
+    V2: ToFun,
     A: Axis,
     E: Extent,
 {
-    let x = x.into_var();
-    let ind = ind.into_var();
+    let x = x.to_fun();
+    let ind = ind.to_fun();
     let axis = axis.to_usize(x.rank()).unwrap();
     let extents = extents.to_arr(0).unwrap();
 
@@ -737,7 +737,7 @@ where
     assert!((0..x.rank())
         .any(|i| { i == axis || (x.extent(i) >= ind.extent(i) && extents[i] >= x.extent(i)) }));
 
-    Function::from_binary_op(
+    Fun::from_binary_op(
         Scatter {
             input: [x.desc().clone(), ind.desc().clone()],
             output: TensorDesc::new(extents, x.data_type()),
@@ -757,7 +757,7 @@ impl Compose<2> for Scatter {
         &self.output
     }
 
-    fn grad(&self, x: [&Function; 2], _: &Function, gy: &Function) -> [Option<Function>; 2] {
+    fn grad(&self, x: [&Fun; 2], _: &Fun, gy: &Fun) -> [Option<Fun>; 2] {
         [Some(gather(gy, x[1], self.axis)), None]
     }
 
@@ -833,13 +833,13 @@ impl Compose<2> for Scatter {
     }
 }
 
-pub fn concat<V, I, A>(x: I, axis: A) -> Function
+pub fn concat<V, I, A>(x: I, axis: A) -> Fun
 where
-    V: Variable,
+    V: ToFun,
     I: IntoIterator<Item = V>,
     A: Axis,
 {
-    let x: Vec<Function> = x.into_iter().map(|v| v.into_var()).collect_vec();
+    let x: Vec<Fun> = x.into_iter().map(|v| v.to_fun()).collect_vec();
     let axis = axis.to_usize(x[0].rank()).unwrap();
 
     let mut concat_size = x[0].extent(axis);
@@ -857,7 +857,7 @@ where
     let mut extents = x[0].extents().to_vec();
     extents[axis] = concat_size;
 
-    Function::from_variadic_op(
+    Fun::from_variadic_op(
         Concat {
             input: x.iter().map(|v| v.desc()).cloned().collect_vec(),
             output: TensorDesc {
@@ -879,7 +879,7 @@ impl VariadicCompose for Concat {
         &self.output
     }
 
-    fn grad(&self, x: &[Function], _: &Function, gy: &Function) -> Vec<Option<Function>> {
+    fn grad(&self, x: &[Fun], _: &Fun, gy: &Fun) -> Vec<Option<Fun>> {
         let mut i = 0;
         let mut g = Vec::new();
         for e in x.iter().map(|v| v.extents()[self.axis]) {
@@ -940,7 +940,7 @@ mod tests {
     use crate::session::context::Context;
     use crate::shape::Shape;
     use crate::tensor::Tensor;
-    use crate::var::{grad_check, Function};
+    use crate::var::{grad_check, Fun};
 
     #[test]
     fn test_reshape() {
@@ -977,7 +977,7 @@ mod tests {
             [[-0.3811, 0.5414, -0.6000], [-1.2772, -1.5542, 0.2278]],
         ]);
 
-        let a = Function::new(a);
+        let a = Fun::new(a);
 
         let b = a.reshape(Shape::new([4, 2, 3]));
 

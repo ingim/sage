@@ -6,7 +6,7 @@ use crate::session::context::{CachedAccess, Context};
 use crate::shape::{display_comma, Array, Axes, Axis, Shape};
 use crate::tensor::data::DataType;
 use crate::tensor::{Tensor, TensorDesc};
-use crate::var::{Function, Variable};
+use crate::var::{Fun, ToFun};
 use itertools::Itertools;
 
 // refer_id, refer_stride, [target_ids],  [target_strides]
@@ -48,20 +48,20 @@ pub struct ReduceArgOperator {
     cached: CachedAccess,
 }
 
-pub fn sum<V, A>(x: V, axes: A, preserve_axes: bool) -> Function
+pub fn sum<V, A>(x: V, axes: A, preserve_axes: bool) -> Fun
 where
-    V: Variable,
+    V: ToFun,
     A: Axes,
 {
     reduce(x, axes, preserve_axes, Reduce::Sum)
 }
 
-pub fn mean<V, A>(x: V, axes: A, preserve_axes: bool) -> Function
+pub fn mean<V, A>(x: V, axes: A, preserve_axes: bool) -> Fun
 where
-    V: Variable,
+    V: ToFun,
     A: Axes,
 {
-    let x = x.into_var();
+    let x = x.to_fun();
     let axes = axes.to_arr(x.rank()).unwrap();
     let size = axes.iter().map(|axis| x.extent(*axis)).product::<usize>() as f32;
 
@@ -70,52 +70,52 @@ where
     &r / scalar(size, r.extents())
 }
 
-pub fn var<V, A>(x: V, axes: A, preserve_axes: bool) -> Function
+pub fn var<V, A>(x: V, axes: A, preserve_axes: bool) -> Fun
 where
-    V: Variable,
+    V: ToFun,
     A: Axes,
 {
-    let x = x.into_var();
+    let x = x.to_fun();
     let axes = axes.to_arr(x.rank()).unwrap();
 
     x.square().mean(&axes, preserve_axes) - x.mean(&axes, preserve_axes).square()
 }
 
-pub fn prod<V, A>(x: V, axes: A, preserve_axes: bool) -> Function
+pub fn prod<V, A>(x: V, axes: A, preserve_axes: bool) -> Fun
 where
-    V: Variable,
+    V: ToFun,
     A: Axes,
 {
     reduce(x, axes, preserve_axes, Reduce::Prod)
 }
 
-pub fn max<V, A>(x: V, axes: A, preserve_axes: bool) -> Function
+pub fn max<V, A>(x: V, axes: A, preserve_axes: bool) -> Fun
 where
-    V: Variable,
+    V: ToFun,
     A: Axes,
 {
     reduce(x, axes, preserve_axes, Reduce::Max)
 }
 
-pub fn min<V, A>(x: V, axes: A, preserve_axes: bool) -> Function
+pub fn min<V, A>(x: V, axes: A, preserve_axes: bool) -> Fun
 where
-    V: Variable,
+    V: ToFun,
     A: Axes,
 {
     reduce(x, axes, preserve_axes, Reduce::Min)
 }
 
-pub fn argmax<V, A>(x: V, axis: A, preserve_axes: bool) -> Function
+pub fn argmax<V, A>(x: V, axis: A, preserve_axes: bool) -> Fun
 where
-    V: Variable,
+    V: ToFun,
     A: Axis,
 {
     reduce_arg(x, axis, preserve_axes, ReduceArg::Max)
 }
 
-pub fn argmin<V, A>(x: V, axis: A, preserve_axes: bool) -> Function
+pub fn argmin<V, A>(x: V, axis: A, preserve_axes: bool) -> Fun
 where
-    V: Variable,
+    V: ToFun,
     A: Axis,
 {
     reduce_arg(x, axis, preserve_axes, ReduceArg::Min)
@@ -200,15 +200,15 @@ fn compute_reduce_arg(
     Ok(y)
 }
 
-pub fn reduce<V, A>(x: V, axes: A, preserve_axes: bool, op: Reduce) -> Function
+pub fn reduce<V, A>(x: V, axes: A, preserve_axes: bool, op: Reduce) -> Fun
 where
-    V: Variable,
+    V: ToFun,
     A: Axes,
 {
-    let x = x.into_var();
+    let x = x.to_fun();
     let axes = axes.to_arr(x.rank()).unwrap();
 
-    Function::from_unary_op(
+    Fun::from_unary_op(
         ReduceOperator {
             input: [x.desc().clone()],
             output: TensorDesc::new(
@@ -233,7 +233,7 @@ impl Compose<1> for ReduceOperator {
         &self.output
     }
 
-    fn grad(&self, x: [&Function; 1], y: &Function, gy: &Function) -> [Option<Function>; 1] {
+    fn grad(&self, x: [&Fun; 1], y: &Fun, gy: &Fun) -> [Option<Fun>; 1] {
         // println!("-------------------");
         // println!("x {:?}", x.shape());
         // println!("y {:?}", y.shape());
@@ -329,15 +329,15 @@ impl Compose<1> for ReduceOperator {
     }
 }
 
-pub fn reduce_arg<V, A>(x: V, axis: A, preserve_axes: bool, op: ReduceArg) -> Function
+pub fn reduce_arg<V, A>(x: V, axis: A, preserve_axes: bool, op: ReduceArg) -> Fun
 where
-    V: Variable,
+    V: ToFun,
     A: Axis,
 {
-    let x = x.into_var();
+    let x = x.to_fun();
     let axis = axis.to_usize(x.rank()).unwrap();
 
-    Function::from_unary_op(
+    Fun::from_unary_op(
         ReduceArgOperator {
             input: [x.desc().clone()],
             output: TensorDesc::new(
@@ -362,7 +362,7 @@ impl Compose<1> for ReduceArgOperator {
         &self.output
     }
 
-    fn grad(&self, _: [&Function; 1], _: &Function, _: &Function) -> [Option<Function>; 1] {
+    fn grad(&self, _: [&Fun; 1], _: &Fun, _: &Fun) -> [Option<Fun>; 1] {
         [match self.reduce {
             ReduceArg::Max => None,
             ReduceArg::Min => None,
@@ -440,7 +440,7 @@ mod tests {
     use crate::ops::reduce::{argmax, max, mean, min, prod};
     use crate::session::context::Context;
     use crate::tensor::Tensor;
-    use crate::var::{grad_check, Function};
+    use crate::var::{grad_check, Fun};
 
     #[test]
     fn test_reduce() {
@@ -478,7 +478,7 @@ mod tests {
         ])
         .to_device(&mut ctx);
 
-        let x = Function::new(x);
+        let x = Fun::new(x);
         let y_gt = Tensor::new([[0.3351, -0.1962], [0.0096, 0.1076], [-0.5198, 0.1542]]);
 
         let y = mean(&x, [0, 2, 3], false);

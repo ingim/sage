@@ -3,7 +3,7 @@ use crate::ops::{Category, Compose, Composer, VariadicCompose};
 use crate::session::context::Context;
 use crate::session::memory::MemoryError;
 use crate::tensor::Tensor;
-use crate::var::Function;
+use crate::var::Fun;
 use itertools::Itertools;
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
@@ -18,8 +18,8 @@ pub mod reactor;
 
 #[derive(Debug)]
 pub struct Program<'a> {
-    input: Vec<&'a Function>,
-    output: Vec<&'a Function>,
+    input: Vec<&'a Fun>,
+    output: Vec<&'a Fun>,
     routines: Vec<Routine<'a>>,
     //routines_notfused: Vec<Routine<'a>>,
 }
@@ -27,8 +27,8 @@ pub struct Program<'a> {
 // collection of computations maybe called multiples times by program
 #[derive(Debug)]
 pub struct Routine<'a> {
-    input: Vec<&'a Function>,
-    output: &'a Function,
+    input: Vec<&'a Fun>,
+    output: &'a Fun,
     stack: Vec<StackElement<'a>>,
 
     exec_time: Cell<Option<f64>>,
@@ -52,7 +52,7 @@ impl<'a, T> AsRef<T> for OwnedRef<'a, T> {
 
 #[derive(Debug)]
 enum StackElement<'a> {
-    Data(Function),
+    Data(Fun),
     Operator(OwnedRef<'a, Composer>),
     Operation(OwnedRef<'a, Composer>, Vec<StackElement<'a>>),
 }
@@ -61,8 +61,8 @@ enum StackElement<'a> {
 impl<'a> Program<'a> {
     pub fn compile<I1, I2>(x: I1, y: I2) -> Self
         where
-            I1: IntoIterator<Item=&'a Function>,
-            I2: IntoIterator<Item=&'a Function>,
+            I1: IntoIterator<Item=&'a Fun>,
+            I2: IntoIterator<Item=&'a Fun>,
     {
         let x = x.into_iter().collect_vec();
         let y = y
@@ -78,10 +78,10 @@ impl<'a> Program<'a> {
         // We do this to split whole computational graph into multiple ones.
         // Nodes whose values must be retained in the memory (or the context)
 
-        let mut nodes = HashSet::<&Function>::new(); // (unique) vars
-        let mut node_num_edges = HashMap::<&Function, usize>::new(); // number of dependencies each node has on other nodes.
+        let mut nodes = HashSet::<&Fun>::new(); // (unique) vars
+        let mut node_num_edges = HashMap::<&Fun, usize>::new(); // number of dependencies each node has on other nodes.
 
-        let mut stack = Vec::<&Function>::new();
+        let mut stack = Vec::<&Fun>::new();
 
         // populate nodes
         for k in y.iter() {
@@ -122,7 +122,7 @@ impl<'a> Program<'a> {
 
         // get vars with two or more dependencies.
         //let mut global_inputs = HashSet::new();
-        let mut states = HashMap::<&Function, HashSet<&Function>>::new();
+        let mut states = HashMap::<&Fun, HashSet<&Fun>>::new();
 
         for node in state_candidates {
             // do some *subgraph reduction*
@@ -175,7 +175,7 @@ impl<'a> Program<'a> {
 
         ////// PHASE 2: create sub-graphs divided by state_sets //////
 
-        let mut program_inputs = HashSet::<&Function>::new();
+        let mut program_inputs = HashSet::<&Fun>::new();
         let mut routines = Vec::new();
         //let mut routines_notfused = Vec::new();
 
@@ -206,20 +206,20 @@ impl<'a> Program<'a> {
     }
 
     pub fn exec(&self, ctx: &mut Context) {
-        let vf: HashMap<&Function, &Routine> = self
+        let vf: HashMap<&Fun, &Routine> = self
             .routines
             .iter()
             .map(|v| (v.output, v))
-            .collect::<HashMap<&Function, &Routine>>();
+            .collect::<HashMap<&Fun, &Routine>>();
 
-        let mut lock = HashSet::<&Function>::new();
+        let mut lock = HashSet::<&Fun>::new();
 
-        let mut stack = Vec::<&Function>::new();
+        let mut stack = Vec::<&Fun>::new();
         stack.extend(&self.output);
 
         //let mut interm; // state && !output
 
-        let mut ctx_temp = HashMap::<Function, Tensor>::new();
+        let mut ctx_temp = HashMap::<Fun, Tensor>::new();
         let mut data_stack = Vec::new();
 
         while !stack.is_empty() {
@@ -239,7 +239,7 @@ impl<'a> Program<'a> {
                     .iter()
                     .filter(|k| k.is_op() && !ctx.data.contains_key(k) && !ctx_temp.contains_key(k))
                     .cloned()
-                    .collect::<Vec<&Function>>();
+                    .collect::<Vec<&Fun>>();
 
                 // ready to be evaluated
                 if nr.is_empty() {
@@ -511,14 +511,14 @@ impl<'a> Program<'a> {
 
 // All operations are executed in the same stream.
 impl<'a> Routine<'a> {
-    pub fn compile<I>(x: I, y: &'a Function, op_fusion: bool) -> Self
+    pub fn compile<I>(x: I, y: &'a Fun, op_fusion: bool) -> Self
         where
-            I: IntoIterator<Item=&'a Function>,
+            I: IntoIterator<Item=&'a Fun>,
     {
         let x = x.into_iter().collect_vec();
 
         // STEP1. build postfix tree
-        let mut temp = Vec::<&'a Function>::new();
+        let mut temp = Vec::<&'a Fun>::new();
         let mut postfix = Vec::<StackElement<'a>>::new();
 
         temp.push(y);
@@ -614,7 +614,7 @@ impl<'a> Routine<'a> {
         ctx: &mut Context,
         stack_ptr: &mut usize,
         data_stack: &mut Vec<Tensor>,
-        ctx_temp: &HashMap<Function, Tensor>,
+        ctx_temp: &HashMap<Fun, Tensor>,
     ) -> Result<Tensor, Error> {
         let now = Instant::now();
 

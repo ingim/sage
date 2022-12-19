@@ -12,7 +12,7 @@ use crate::ops::map::{MapOperator, NullaryMapOperator, StackElement, VariadicMap
 use crate::ops::reduce::ReduceOperator;
 use crate::session::context::{CachedAccess, Context};
 use crate::session::memory::MemoryError;
-use crate::var::Function;
+use crate::var::Fun;
 use itertools::Itertools;
 use smallvec::{smallvec, SmallVec};
 use std::cmp;
@@ -80,7 +80,7 @@ pub trait Compose<const N: usize>: Debug {
     fn input(&self) -> &[TensorDesc; N];
     fn output(&self) -> &TensorDesc;
 
-    fn grad(&self, x: [&Function; N], y: &Function, gy: &Function) -> [Option<Function>; N];
+    fn grad(&self, x: [&Fun; N], y: &Fun, gy: &Fun) -> [Option<Fun>; N];
     fn compute(&self, x: [&Tensor; N], ctx: &mut Context) -> Result<Tensor, Error>;
 
     fn cat(&self) -> Category {
@@ -92,7 +92,7 @@ pub trait VariadicCompose: Debug {
     fn input(&self) -> &[TensorDesc];
     fn output(&self) -> &TensorDesc;
 
-    fn grad(&self, x: &[Function], y: &Function, gy: &Function) -> Vec<Option<Function>>;
+    fn grad(&self, x: &[Fun], y: &Fun, gy: &Fun) -> Vec<Option<Fun>>;
     fn compute(&self, x: &[Tensor], ctx: &mut Context) -> Result<Tensor, Error>;
 
     fn cat(&self) -> Category {
@@ -242,7 +242,7 @@ impl Debug for Composer {
 pub struct Transform {
     opr: Composer,
     t_order: usize,
-    x: SmallVec<[Function; 3]>,
+    x: SmallVec<[Fun; 3]>,
 }
 
 impl Transform {
@@ -257,7 +257,7 @@ impl Transform {
         }
     }
 
-    pub fn unary<O>(opr: O, x: Function) -> Self
+    pub fn unary<O>(opr: O, x: Fun) -> Self
     where
         O: Compose<1> + 'static,
     {
@@ -268,7 +268,7 @@ impl Transform {
         }
     }
 
-    pub fn binary<O>(opr: O, x1: Function, x2: Function) -> Self
+    pub fn binary<O>(opr: O, x1: Fun, x2: Fun) -> Self
     where
         O: Compose<2> + 'static,
     {
@@ -279,7 +279,7 @@ impl Transform {
         }
     }
 
-    pub fn ternary<O>(opr: O, x1: Function, x2: Function, x3: Function) -> Self
+    pub fn ternary<O>(opr: O, x1: Fun, x2: Fun, x3: Fun) -> Self
     where
         O: Compose<3> + 'static,
     {
@@ -290,7 +290,7 @@ impl Transform {
         }
     }
 
-    pub fn variadic<O>(opr: O, x: Vec<Function>) -> Self
+    pub fn variadic<O>(opr: O, x: Vec<Fun>) -> Self
     where
         O: VariadicCompose + 'static,
     {
@@ -315,7 +315,7 @@ impl Transform {
         self.t_order
     }
 
-    pub fn input(&self) -> &[Function] {
+    pub fn input(&self) -> &[Fun] {
         &self.x
     }
 
@@ -323,7 +323,7 @@ impl Transform {
         &self.opr
     }
 
-    pub fn grad(&self, y: &Function, gy: &Function) -> Vec<Option<Function>> {
+    pub fn grad(&self, y: &Fun, gy: &Fun) -> Vec<Option<Fun>> {
         match &self.opr {
             Composer::Nullary(_) => Vec::new(),
             Composer::Unary(opr) => opr.grad([&self.x[0]], y, gy).to_vec(),
