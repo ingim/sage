@@ -1,3 +1,5 @@
+use crate::v2::function::Function;
+
 pub trait Backend {
     type TensorPrimitive;
 
@@ -5,8 +7,15 @@ pub trait Backend {
 }
 
 
-pub struct Tensor<B: Backend> {
-    pub data: B::TensorPrimitive,
+pub enum Tensor<B: Backend> {
+    Lazy(Function<B>, Vec<Tensor<B>>),
+    Ready(B::TensorPrimitive),
+}
+
+impl<B:Backend> Tensor<B> {
+    pub fn new() -> Self {
+        Tensor::Ready(B::default())
+    }
 }
 
 

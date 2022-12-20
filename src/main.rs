@@ -7,9 +7,15 @@ mod v2;
 // local create sage-macros
 use sage_macros::differentiable;
 use v2::tensor::Tensor;
+use crate::v2::function::Function;
 use crate::v2::tensor::{Backend, Native};
 
 struct SomeOp;
+
+
+fn foo<B: Backend>(x: Tensor<B>) -> Tensor<B> {
+    Tensor::new()
+}
 
 impl SomeOp {
 
@@ -30,17 +36,15 @@ impl SomeOp {
 
 
 
-        Tensor { data: B::default() }
+        Tensor::new()
     }
 // out: attr: "delimiters"
 // out: item: "fn invoke4() {}"
 }
 
 
-
-
 fn main() {
-    let x = Tensor::<Native> { data: Native::default() };
+    let x = Tensor::<Native>::new();
 
     // condition 1. the native form must be usable.
 
@@ -51,17 +55,27 @@ fn main() {
 
     // let y = SomeOp.some_calc(x);
 //
-
-
-
-
-    println!("{:?}", a);
-    println!("{:?}", b);
-
-
 }
 
 
+// Gradient function for two inputs
+fn grad2<B: Backend, F>(f: F) -> Function<B>
+    where F: Fn(Tensor<B>, Tensor<B>) -> Tensor<B>
+{
+
+    // feed dummy values
+    let y = f(Tensor::new(), Tensor::new());
+
+    // extract function from tensor
+    if let Tensor::Lazy(f, _) = y {
+        //f
+    } else {
+        panic!("not implemented")
+    }
+
+
+    Function::new()
+}
 
 
 
