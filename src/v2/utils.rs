@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 pub struct Ranked<T> {
     inner: T,
     rank: usize,

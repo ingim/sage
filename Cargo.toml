@@ -18,7 +18,14 @@ include = ["/src", "LICENSE-MIT", "LICENSE-APACHE", "README.md"]
 [features]
 #cuda = ["rustacuda", "rustacuda_core", "rustacuda_derive"]
 
+[workspace]
+members = [
+    "crates/sage-macros",
+]
+
 [dependencies]
+sage_macros = { path = "crates/sage-macros" }
+
 #futures = "0.3"
 #num-traits = "0.2"
 #thiserror = "1.0"
