@@ -2,6 +2,8 @@
 #![feature(fn_traits)]
 #![allow(unused)]  // FIXME
 
+extern crate core;
+
 mod v2;
 
 // local create sage-macros

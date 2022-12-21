@@ -1,44 +1,50 @@
+use core::slice::SlicePattern;
+use std::borrow::Borrow;
 use std::collections::{BinaryHeap, HashMap};
 use std::hash::{Hash, Hasher};
+use std::iter::zip;
 use std::rc::Rc;
 use crate::v2::tensor::{Backend, Tensor};
 use crate::v2::utils::Ranked;
 
 
-pub trait Compose<const N: usize, B: Backend> {
+pub trait Operator<const N: usize, B: Backend> {
     // fn grad(&self, x: [&Fun; N], y: &Fun, gy: &Fun) -> [Option<Fun>; N];
     // fn compute(&self, x: [&Tensor; N], ctx: &mut Context) -> Result<Tensor, Error>;
 
     fn forward(&self, x: [Function<B>; N]) -> Function<B>;
-    fn backward(&self, x: [Function<B>; N], gy: Function<B>) -> Function<B>;
+    fn backward(&self, x: &[Function<B>; N], gy: &Function<B>) -> [Option<Function<B>>; N];
 
     fn ir(&self) -> String;
 }
 
-pub struct Composition<const N: usize, B: Backend> {
-    f: Box<dyn Compose<N, B>>,
+pub struct Operation<const N: usize, B: Backend> {
+    f: Box<dyn Operator<N, B>>,
     args: [Function<B>; N],
 
     // Topological order of the function.
     t_order: usize,
 }
 
+impl<const N: usize, B: Backend> Operation<N, B> {}
 
-pub enum Operation<B: Backend> {
-    Nullary(Composition<0, B>),
-    Unary(Composition<1, B>),
-    Binary(Composition<2, B>),
-    Ternary(Composition<3, B>),
+
+pub enum Composition<B: Backend> {
+    Nullary(Operation<0, B>),
+    Unary(Operation<1, B>),
+    Binary(Operation<2, B>),
+    Ternary(Operation<3, B>),
     Data(Option<Tensor<B>>), // Data(RefCell<Option<Tensor>>),??
 }
 
+#[derive(Clone)]
 pub struct Function<B: Backend> {
-    pub op: Rc<Operation<B>>,
+    pub comp: Rc<Composition<B>>,
 }
 
 impl<B: Backend> Function<B> {
     pub fn new() -> Self {
-        Function { op: Rc::new(Operation::Data(None)) }
+        Function { comp: Rc::new(Composition::Data(None)) }
     }
 
 
@@ -65,27 +71,37 @@ pub fn grad<B: Backend>(f: Function<B>) -> Function<B> {
         let y = queue.pop().unwrap().into_inner();
         let gy = grads.get(&y).unwrap();
 
-        if let Some(op) = y.op() {
-            let x = op.input();
-            let gx = op.grad(y, gy);
+        let (x, gx) = match y.comp.borrow() {
+            Composition::Unary(op) => {
+                (op.args.as_slice(), op.f.backward(&op.args, gy).as_slice())
+            }
+            Composition::Binary(op) => {
+                (op.args.as_slice(), op.f.backward(&op.args, gy).as_slice())
+            }
+            Composition::Ternary(op) => {
+                (op.args.as_slice(), op.f.backward(&op.args, gy).as_slice())
+            }
+            // Nullary and Data are not differentiable.
+            _ => {
+                ([].as_slice(), [].as_slice())
+            }
+        };
 
-            // insert (x, gx) pairs into grads hashmap
-            for (x, gx) in x.iter().zip(gx.into_iter()) {
-                // skip non-differentiable variables.
-                if let Some(gx) = gx {
-                    if gx.extents() != x.extents() {
-                        println!("{:?}", op.cat());
-                        panic!("grad shape error. check grad func def");
-                    }
-
-                    if !grads.contains_key(x) {
-                        queue.push(Ranked::new(x, x.t_order()))
-                    }
-                    grads
-                        .entry(x)
-                        .and_modify(|v| *v = (&gx).add(&*v))
-                        .or_insert_with(|| gx);
+        for (x, gx) in zip(x, gx) {
+            // skip non-differentiable variables.
+            if let Some(gx) = gx {
+                if gx.shape() != x.shape() {
+                    panic!("grad shape error. check grad func def");
                 }
+
+                if !grads.contains_key(x) {
+                    queue.push(Ranked::new(x, x.t_order()))
+                }
+
+                grads
+                    .entry(x)
+                    .and_modify(|v| *v = (&gx).add(&*v))
+                    .or_insert_with(|| *gx);
             }
         }
     }
@@ -100,7 +116,7 @@ pub fn grad<B: Backend>(f: Function<B>) -> Function<B> {
 
 
 fn scalar<B: Backend>(x: f32, shape: Vec<usize>) -> Function<B> {
-    Function { op: Rc::new(Operation::Data(Some(Tensor::new()))) }
+    Function { comp: Rc::new(Composition::Data(Some(Tensor::new()))) }
 }
 
 
@@ -179,13 +195,13 @@ impl<B: Backend> Eq for Function<B> {}
 
 impl<B: Backend> PartialEq for Function<B> {
     fn eq(&self, other: &Self) -> bool {
-        Rc::ptr_eq(&self.op, &other.op)
+        Rc::ptr_eq(&self.comp, &other.comp)
     }
 }
 
 impl<B: Backend> Hash for Function<B> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        Rc::as_ptr(&self.op).hash(state)
+        Rc::as_ptr(&self.comp).hash(state)
     }
 }
 

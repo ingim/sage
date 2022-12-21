@@ -25,7 +25,7 @@ members = [
 
 [dependencies]
 sage_macros = { path = "crates/sage-macros" }
-
+itertools = "0.10.2"
 #futures = "0.3"
 #num-traits = "0.2"
 #thiserror = "1.0"
