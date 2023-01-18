@@ -690,7 +690,7 @@ impl<const N: usize> SizedExtent<N> for [usize; N] {
 
 #[cfg(test)]
 mod tests {
-    use crate::shape::{axes_to_arr, extents_to_arr, union, Axis, ShapeError, Size};
+    use crate::v2::shape::{axes_to_arr, extents_to_arr, union, Axis, ShapeError, Size};
 
     fn axis_to_usize<A: Axis>(a: A, bound: usize) -> Result<usize, ShapeError> {
         a.to_usize(bound)

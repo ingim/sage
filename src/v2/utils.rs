@@ -1,4 +1,6 @@
 use std::cmp::Ordering;
+use crate::v2::tensor::Tensor;
+use crate::v2::backend::Backend;
 
 pub struct Ranked<T> {
     inner: T,
@@ -34,3 +36,9 @@ impl<T> PartialOrd for Ranked<T> {
         Some(self.cmp(other))
     }
 }
+
+
+pub trait Parameter<B: Backend> {
+    fn to_vec(&self) -> Vec<&Tensor<B>>;
+}
+
