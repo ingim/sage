@@ -2,6 +2,7 @@
 #![feature(fn_traits)]
 #![allow(unused)]  // FIXME
 #![feature(is_sorted)]
+#![feature(iter_collect_into)]
 
 extern crate core;
 
@@ -9,7 +10,6 @@ mod v2;
 
 // local create sage-macros
 use sage_macros::differentiable;
-use v2::backend::TensorWrapper;
 use crate::v2::tensor::Tensor;
 use crate::v2::backend::{Backend, Native};
 

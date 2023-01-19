@@ -1,9 +1,11 @@
-use crate::v2::tensor::{Operation, Operator, Tensor};
+use crate::v2::tensor::{Operator, Tensor};
 use crate::v2::backend::Backend;
 use std::marker::PhantomData;
+use smallvec::{SmallVec, smallvec, ToSmallVec};
 use crate::v2::ir::{Graph, Node};
 use crate::v2::shape::{Extent, Shape};
 
+#[derive(Clone)]
 pub struct Full {
     scalar: f32,
     shape: Shape,
@@ -16,25 +18,25 @@ pub fn scalar<B: Backend>(scalar: f32) -> Tensor<B> {
 
 
 pub fn full<B: Backend, E: Extent>(scalar: f32, extent: E) -> Tensor<B> {
-    Operation::<0, B>::new(Full { scalar, shape: Shape::new(extent) }, []).into_tensor()
+    Tensor::from_op(Full { scalar, shape: Shape::new(extent) }, [])
 }
 
 
 impl<B: Backend> Operator<0, B> for Full {
-    fn grad(&self, x: &[Tensor<B>; 0], gy: &Tensor<B>) -> [Option<Tensor<B>>; 0] {
+    fn grad(&self, x: &[Tensor<B>; 0], _: &Tensor<B>, gy: &Tensor<B>) -> [Option<Tensor<B>>; 0] {
         todo!()
     }
 
-    fn build_ir(&self) -> String {
-        "sd".to_string()
+    fn build_ir(&self, x: &[Node; 0], g: &mut Graph) -> Node {
+        todo!()
     }
 }
 
-
+#[derive(Clone)]
 pub struct Add;
 
 impl<B: Backend> Operator<2, B> for Add {
-    fn grad(&self, x: &[Tensor<B>; 2], gy: &Tensor<B>) -> [Option<Tensor<B>>; 2] {
+    fn grad(&self, x: &[Tensor<B>; 2], _: &Tensor<B>, gy: &Tensor<B>) -> [Option<Tensor<B>>; 2] {
         todo!()
     }
 
@@ -43,3 +45,4 @@ impl<B: Backend> Operator<2, B> for Add {
         g.add(a, x[1])
     }
 }
+

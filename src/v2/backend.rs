@@ -1,4 +1,5 @@
 use crate::v2::ir;
+use crate::v2::ir::Graph;
 use crate::v2::tensor::Tensor;
 
 pub trait Backend {
@@ -18,5 +19,9 @@ impl Backend for Native {
 
     fn default() -> Self::TensorPrimitive {
         "Hi. this is default value".to_string()
+    }
+
+    fn eval(x: Graph) -> Self::TensorPrimitive {
+        todo!()
     }
 }
