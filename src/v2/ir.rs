@@ -5,7 +5,6 @@ pub struct Graph {
     nodes: HashSet<Node>,
     edges_in: HashMap<Node, Vec<Node>>,
     edges_out: HashMap<Node, Vec<Node>>,
-
     id_counter: usize,
 }
 
@@ -26,12 +25,27 @@ impl Node {
     fn new(id: usize, cmd: Command) -> Self {
         Node { id, cmd }
     }
+
+    pub fn cmd(&self) -> Command {
+        self.cmd
+    }
+
 }
+
+
 
 
 impl Graph {
     pub fn new() -> Self {
         Graph::default()
+    }
+
+    pub fn edges_in(&self, node: Node) -> &[Node] {
+        &self.edges_in[&node]
+    }
+
+    pub fn edges_out(&self, node: Node) -> &[Node] {
+        &self.edges_out[&node]
     }
 
     fn create_node<const N: usize>(&mut self, cmd: Command, args: [Node; N]) -> Node {

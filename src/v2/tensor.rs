@@ -9,8 +9,9 @@ use std::rc::Rc;
 use itertools::Itertools;
 
 use crate::v2::ops::scalar;
-use crate::v2::backend::{Backend};
+use crate::v2::backend::{Backend, TensorPrimitive};
 use crate::v2::ir;
+use crate::v2::shape::Shape;
 use crate::v2::utils::Ranked;
 
 
@@ -129,7 +130,7 @@ impl<B: Backend> Operation<B> {}
 
 pub struct Tensor<B: Backend> {
     op: Rc<Option<Operation<B>>>,
-    data: Rc<RefCell<Option<B::TensorPrimitive>>>,
+    data: Rc<RefCell<Option<B::Tensor>>>,
 }
 
 impl<B: Backend> Tensor<B> {
@@ -144,44 +145,12 @@ impl<B: Backend> Tensor<B> {
         Tensor { op: Rc::new(Some(op)), data: Rc::new(RefCell::new(None)) }
     }
 
-    //
-    // pub fn from_nullary_op<O>(op: O) -> Self
-    //     where O: Operator<0, B> + 'static
-    // {
-    //     let op = Operation::new(op, []);
-    //     Tensor::from_op(Operation::Nullary(op))
-    // }
-    //
-    // pub fn from_unary_op<O>(op: O, x: Tensor<B>) -> Self
-    //     where O: Operator<1, B> + 'static
-    // {
-    //     let op = Operation::new(op, [x]);
-    //     Tensor::from_op(Operation::Unary(op))
-    // }
-    //
-    // pub fn from_binary_op<O>(op: O, x0: Tensor<B>, x1: Tensor<B>) -> Self
-    //     where O: Operator<2, B> + 'static
-    // {
-    //     let op = Operation::new(op, [x0, x1]);
-    //     Tensor::from_op(Operation::Binary(op))
-    // }
-    //
-    // pub fn from_ternary_op<O>(op: O, x0: Tensor<B>, x1: Tensor<B>, x2: Tensor<B>) -> Self
-    //     where O: Operator<3, B> + 'static
-    // {
-    //     let op = Operation::new(op, [x0, x1, x2]);
-    //     Tensor::from_op(Operation::Ternary(op))
-    // }
-    //
-    // pub fn from_variadic_op<O>(op: O, x: Vec<Tensor<B>>) -> Self
-    //     where O: VariadicOperator<B> + 'static
-    // {
-    //     let op = VariadicOp::new(op, x);
-    //     Tensor::from_op(Operation::Variadic(op))
-    // }
+    pub fn shape(&self) -> &Shape {
+        if !self.ready() {
+            eval([self]);
+        }
 
-    pub fn shape(&self) -> Vec<usize> {
-        vec![0]
+        self.data().unwrap().shape()
     }
 
     pub fn t_order(&self) -> usize {
@@ -192,16 +161,16 @@ impl<B: Backend> Tensor<B> {
         }
     }
 
-
     pub fn grad(&self, x: &Tensor<B>) -> Tensor<B> {
         Tensor::new()
     }
 
-
-    pub fn sync(&self) {}
-
     pub fn ready(&self) -> bool {
         RefCell::borrow(&self.data).is_some()
+    }
+
+    pub fn data(&self) -> Option<B::Tensor> {
+        RefCell::borrow(&self.data).as_ref().cloned()
     }
 }
 
@@ -247,20 +216,22 @@ pub fn grad<'a, B: Backend>(y: &'a Tensor<B>) -> HashMap<&'a Tensor<B>, Tensor<B
     grads
 }
 
-pub fn sync<'a, B, I>(x: I)
+pub fn eval<'a, B, I>(x: I)
     where B: Backend + 'a, I: IntoIterator<Item=&'a Tensor<B>> + 'a
 {
-    let mut g = ir::Graph::new();
-
+    let mut targets: Vec<&Tensor<B>> = x.into_iter().collect();
     // sort x by t_order in descending order
-    let mut x: Vec<&Tensor<B>> = x.into_iter().collect();
-    x.sort_by_key(|b| std::cmp::Reverse(b.t_order()));
+    targets.sort_by_key(|b| std::cmp::Reverse(b.t_order()));
+
+    let mut g = ir::Graph::new();
+    let mut inputs = HashMap::<ir::Node, B::Tensor>::new();
+    let mut outputs = Vec::with_capacity(targets.len());
 
     let mut done = HashMap::<&Tensor<B>, ir::Node>::new();
     let mut node_args = Vec::with_capacity(3);
 
     // traverse x
-    for x in x {
+    for &x in targets.iter() {
 
         // traverse until it meets a data node
         let mut stack = vec![x];
@@ -274,8 +245,10 @@ pub fn sync<'a, B, I>(x: I)
                 continue;
             }
 
-            if e.ready() {
+            if let Some(data) = e.data() {
                 let node = g.data();
+                inputs.insert(node, data.clone());
+
                 done.insert(e, node);
                 stack.pop();
             }
@@ -288,7 +261,7 @@ pub fn sync<'a, B, I>(x: I)
                     .peekable();
 
                 if not_done.peek().is_some() {
-                    not_done.for_each(|v| stack.push(v));
+                    stack.extend(not_done);
                 } else {
                     op.args().iter().map(|v| done[&v]).collect_into(&mut node_args);
 
@@ -301,6 +274,14 @@ pub fn sync<'a, B, I>(x: I)
                 panic!("Uncomputable tensor");
             }
         }
+    }
+
+    targets.iter().map(|v| done[v]).collect_into(&mut outputs);
+
+    let res = B::eval(g, inputs, outputs);
+
+    for (target, r) in zip(targets, res) {
+        RefCell::borrow_mut(&target.data).replace(r);
     }
 }
 

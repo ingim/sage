@@ -11,8 +11,8 @@ mod v2;
 // local create sage-macros
 use sage_macros::differentiable;
 use crate::v2::tensor::Tensor;
-use crate::v2::backend::{Backend, Native};
-
+use crate::v2::backend::{Backend};
+use crate::v2::backend::native::Native;
 
 
 fn main() {

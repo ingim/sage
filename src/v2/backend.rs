@@ -1,27 +1,18 @@
+pub mod native;
+
+use std::collections::HashMap;
 use crate::v2::ir;
-use crate::v2::ir::Graph;
+use crate::v2::ir::{Command, Graph, Node};
+use crate::v2::shape::Shape;
 use crate::v2::tensor::Tensor;
 
-pub trait Backend {
-    type TensorPrimitive;
-
-    fn default() -> Self::TensorPrimitive;
-
-    fn eval(x: ir::Graph) -> Self::TensorPrimitive;
+pub trait TensorPrimitive {
+    fn shape(&self) -> &Shape;
 }
 
 
-pub struct Native {}
+pub trait Backend {
+    type Tensor: Clone + TensorPrimitive;
 
-
-impl Backend for Native {
-    type TensorPrimitive = String;
-
-    fn default() -> Self::TensorPrimitive {
-        "Hi. this is default value".to_string()
-    }
-
-    fn eval(x: Graph) -> Self::TensorPrimitive {
-        todo!()
-    }
+    fn eval(f: ir::Graph, inputs: HashMap<ir::Node, Self::Tensor>, outputs: Vec<ir::Node>) -> Vec<Self::Tensor>;
 }
