@@ -28,7 +28,7 @@ impl<B: Backend> Operator<0, B> for Full {
     }
 
     fn build_ir(&self, x: &[Node; 0], g: &mut Graph) -> Node {
-        todo!()
+        g.full(self.scalar, self.shape.clone())
     }
 }
 
@@ -41,8 +41,7 @@ impl<B: Backend> Operator<2, B> for Add {
     }
 
     fn build_ir(&self, x: &[Node; 2], g: &mut Graph) -> Node {
-        let a = g.add(x[0], x[1]);
-        g.add(a, x[1])
+        g.add(x[0], x[1])
     }
 }
 

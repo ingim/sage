@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 
 #[derive(Default)]
 pub struct Graph {
@@ -8,15 +9,16 @@ pub struct Graph {
     id_counter: usize,
 }
 
-#[derive(Copy, Clone, Eq, Hash, PartialEq)]
+#[derive(Copy, Clone)]
 pub struct Node {
     id: usize,
     cmd: Command,
 }
 
-#[derive(Copy, Clone, Eq, Hash, PartialEq)]
+#[derive(Copy, Clone)]
 pub enum Command {
     Data,
+    Full(f32, Vec<usize>),
     Add,
 }
 
@@ -25,15 +27,24 @@ impl Node {
     fn new(id: usize, cmd: Command) -> Self {
         Node { id, cmd }
     }
-
     pub fn cmd(&self) -> Command {
         self.cmd
     }
-
 }
 
+impl PartialEq for Node {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
 
+impl Eq for Node {}
 
+impl Hash for Node {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
 
 impl Graph {
     pub fn new() -> Self {
@@ -66,6 +77,11 @@ impl Graph {
     pub fn data(&mut self) -> Node {
         self.create_node(Command::Data, [])
     }
+
+    pub fn full(&mut self, x: Node, scalar: f32) -> Node {
+        self.create_node(Command::Add, [x, self.data()])
+    }
+
 
     pub fn add(&mut self, x0: Node, x1: Node) -> Node {
         self.create_node(Command::Add, [x0, x1])

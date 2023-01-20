@@ -13,14 +13,23 @@ use sage_macros::differentiable;
 use crate::v2::tensor::Tensor;
 use crate::v2::backend::{Backend};
 use crate::v2::backend::native::Native;
+use crate::v2::tensor::data::Scalar;
+
+struct Param {
+    x:Tensor
+}
 
 
 fn main() {
+
+    let p = Param {
+        x: Tensor::new()
+
+    };
+
     let x = Tensor::<Native>::new();
 
     // condition 1. the native form must be usable.
-
-
 
 
     // grad(some_calc)()
@@ -29,8 +38,28 @@ fn main() {
 
     // let y = SomeOp.some_calc(x);
 //
+
+    let foo = Foo::new(30);
 }
 
+
+struct Foo<T = f32>
+    where T: Scalar
+{
+    x: T,
+}
+
+impl<T> Foo<T>
+    where T: Scalar
+{
+    fn new(x: T) -> Self {
+        Foo { x }
+    }
+
+    fn bar(&self) -> &T {
+        &self.x
+    }
+}
 
 
 //

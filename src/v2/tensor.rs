@@ -1,3 +1,6 @@
+pub mod data;
+mod format;
+
 use std::borrow::{Borrow, BorrowMut};
 use std::cell::RefCell;
 use std::collections::{BinaryHeap, HashMap, HashSet};
@@ -10,8 +13,10 @@ use itertools::Itertools;
 
 use crate::v2::ops::scalar;
 use crate::v2::backend::{Backend, TensorPrimitive};
-use crate::v2::ir;
+use crate::v2::backend::native::Native;
+use crate::v2::{backend, ir};
 use crate::v2::shape::Shape;
+use crate::v2::tensor::data::Scalar;
 use crate::v2::utils::Ranked;
 
 
@@ -128,7 +133,7 @@ impl<B: Backend> Operation<B> {
 
 impl<B: Backend> Operation<B> {}
 
-pub struct Tensor<B: Backend> {
+pub struct Tensor<B: Backend = Native> {
     op: Rc<Option<Operation<B>>>,
     data: Rc<RefCell<Option<B::Tensor>>>,
 }
@@ -145,7 +150,7 @@ impl<B: Backend> Tensor<B> {
         Tensor { op: Rc::new(Some(op)), data: Rc::new(RefCell::new(None)) }
     }
 
-    pub fn shape(&self) -> &Shape {
+    pub fn shape(&self) -> Shape {
         if !self.ready() {
             eval([self]);
         }
@@ -173,6 +178,21 @@ impl<B: Backend> Tensor<B> {
         RefCell::borrow(&self.data).as_ref().cloned()
     }
 }
+
+
+// native only
+
+impl Tensor<Native> {
+    // iterator
+    pub fn iter<T: Scalar>(&self) -> backend::native::Iter<T> {
+        todo!()
+
+        // RefCell::borrow(&self.data).as
+        //
+        // self.data().unwrap().iter()
+    }
+}
+
 
 impl<B: Backend> Clone for Tensor<B> {
     fn clone(&self) -> Self {
