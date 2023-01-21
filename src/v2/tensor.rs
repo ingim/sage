@@ -20,9 +20,7 @@ use crate::v2::utils::Ranked;
 
 
 pub trait Operator<const N: usize, B: Backend>: Clone {
-    fn grad(&self, x: &[Tensor<B>; N], y: &Tensor<B>, gy: &Tensor<B>) -> [Option<Tensor<B>>; N] {
-        [0; N].map(|_| None)
-    }
+    fn grad(&self, x: &[Tensor<B>; N], y: &Tensor<B>, gy: &Tensor<B>) -> [Option<Tensor<B>>; N];
 
     fn build_ir(&self, x: [ir::Node; N], g: &mut ir::Graph) -> ir::Node;
 }
@@ -118,6 +116,12 @@ impl<B: Backend> Tensor<B> {
         // must unwrap because we just checked that it is ready
         RefCell::borrow(&self.data).as_ref().cloned().unwrap()
     }
+
+    // impl operations
+
+
+
+
 }
 
 // native only

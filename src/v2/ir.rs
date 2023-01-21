@@ -61,9 +61,6 @@ pub enum UnaryOperation {
     // Logic
     Not,
 
-    // Cast
-    CastInt,
-    CastFloat,
 }
 
 #[derive(Copy, Clone)]
@@ -164,9 +161,16 @@ impl Graph {
         self.create_node(Command::Constant(scalar), [])
     }
 
+    pub fn map1(&mut self, op: UnaryOperation, x: Node) -> Node {
+        self.create_node(Command::Map1(op), [x])
+    }
 
-    pub fn add(&mut self, x0: Node, x1: Node) -> Node {
-        self.create_node(Command::Map2(BinaryOperation::Add), [x0, x1])
+    pub fn map2(&mut self, op: BinaryOperation, x0: Node, x1: Node) -> Node {
+        self.create_node(Command::Map2(op), [x0, x1])
+    }
+
+    pub fn map3(&mut self, op: TernaryOperation, x0: Node, x1: Node, x2: Node) -> Node {
+        self.create_node(Command::Map3(op), [x0, x1, x2])
     }
 }
 
