@@ -13,7 +13,7 @@ use sage_macros::differentiable;
 use crate::v2::tensor::Tensor;
 use crate::v2::backend::{Backend};
 use crate::v2::backend::native::Native;
-use crate::v2::tensor::data::Scalar;
+use v2::tensor::data::Scalar;
 
 struct Param {
     x:Tensor

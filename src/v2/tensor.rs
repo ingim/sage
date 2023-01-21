@@ -1,12 +1,10 @@
-pub mod data;
-mod format;
-
 use std::borrow::{Borrow, BorrowMut};
 use std::cell::RefCell;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::iter;
 use std::iter::zip;
+use std::marker::PhantomData;
 use std::ops::{Add, Deref};
 use std::rc::Rc;
 use itertools::Itertools;
@@ -16,34 +14,39 @@ use crate::v2::backend::{Backend, TensorPrimitive};
 use crate::v2::backend::native::Native;
 use crate::v2::{backend, ir};
 use crate::v2::shape::Shape;
-use crate::v2::tensor::data::Scalar;
+use data::Scalar;
 use crate::v2::utils::Ranked;
 
+pub mod data;
+mod format;
 
-pub trait Operator<const N: usize, B: Backend>: Clone {
-    fn grad(&self, x: &[Tensor<B>; N], y: &Tensor<B>, gy: &Tensor<B>) -> [Option<Tensor<B>>; N];
 
-    fn build_ir(&self, x: &[ir::Node; N], g: &mut ir::Graph) -> ir::Node;
+pub trait Operator<const N: usize, B: Backend, T:Scalar>: Clone {
+    fn grad(&self, x: &[Tensor<B, T>; N], y: &Tensor<B, T>, gy: &Tensor<B, T>) -> [Option<Tensor<B, T>>; N] {
+        [0; N].map(|_| None)
+    }
+
+    fn build_ir(&self, x: [ir::Node; N], g: &mut ir::Graph) -> ir::Node;
 }
 
 
-struct Operation<B: Backend> {
-    args: Vec<Tensor<B>>,
+struct Operation<B: Backend, T:Scalar> {
+    args: Vec<Tensor<B, T>>,
     t_order: usize,
 
-    grad: Box<dyn Fn(&[Tensor<B>], &Tensor<B>, &Tensor<B>) -> Vec<Option<Tensor<B>>>>,
+    grad: Box<dyn Fn(&[Tensor<B, T>], &Tensor<B, T>, &Tensor<B, T>) -> Vec<Option<Tensor<B, T>>>>,
     build_ir: Box<dyn Fn(&[ir::Node], &mut ir::Graph) -> ir::Node>,
 }
 
 
-impl<B: Backend> Operation<B> {
-    fn new<const N: usize, O>(op: O, args: [Tensor<B>; N]) -> Operation<B>
-        where O: Operator<N, B> + 'static
+impl<B: Backend, T:Scalar> Operation<B, T> {
+    fn new<const N: usize, O>(op: O, args: [Tensor<B, T>; N]) -> Self
+        where O: Operator<N, B, T> + 'static
     {
         let t_order = args.iter().map(|x| x.t_order()).max().unwrap_or(0);
         let op2 = op.clone();
 
-        let grad = Box::new(move |x: &[Tensor<B>], y: &Tensor<B>, gy: &Tensor<B>| {
+        let grad = Box::new(move |x: &[Tensor<B, T>], y: &Tensor<B, T>, gy: &Tensor<B, T>| {
             match x.try_into() {
                 Ok(x) => op.grad(x, y, gy),
                 Err(_) => panic!("sds"),
@@ -65,11 +68,11 @@ impl<B: Backend> Operation<B> {
         }
     }
 
-    pub fn args(&self) -> &[Tensor<B>] {
+    pub fn args(&self) -> &[Tensor<B, T>] {
         &self.args
     }
 
-    pub fn grad(&self, y: &Tensor<B>, gy: &Tensor<B>) -> Vec<Option<Tensor<B>>> {
+    pub fn grad(&self, y: &Tensor<B, T>, gy: &Tensor<B, T>) -> Vec<Option<Tensor<B, T>>> {
         (self.grad)(&self.args, y, gy)
     }
 
@@ -131,20 +134,20 @@ impl<B: Backend> Operation<B> {
 // }
 
 
-impl<B: Backend> Operation<B> {}
+impl<B: Backend, T:Scalar> Operation<B, T> {}
 
-pub struct Tensor<B: Backend = Native> {
-    op: Rc<Option<Operation<B>>>,
+pub struct Tensor<B: Backend = Native, T: Scalar = f32> {
+    op: Rc<Option<Operation<B, T>>>,
     data: Rc<RefCell<Option<B::Tensor>>>,
 }
 
-impl<B: Backend> Tensor<B> {
+impl<B: Backend, T: Scalar> Tensor<B, T> {
     pub fn new() -> Self {
         Tensor { op: Rc::new(None), data: Rc::new(RefCell::new(None)) }
     }
 
-    pub fn from_op<const N: usize, O>(op: O, args: [Tensor<B>; N]) -> Self
-        where O: Operator<N, B> + 'static
+    pub fn from_op<const N: usize, O>(op: O, args: [Tensor<B, T>; N]) -> Self
+        where O: Operator<N, B, T> + 'static
     {
         let op = Operation::new(op, args);
         Tensor { op: Rc::new(Some(op)), data: Rc::new(RefCell::new(None)) }
@@ -194,7 +197,7 @@ impl Tensor<Native> {
 }
 
 
-impl<B: Backend> Clone for Tensor<B> {
+impl<B: Backend, T:Scalar> Clone for Tensor<B, T> {
     fn clone(&self) -> Self {
         Tensor {
             op: self.op.clone(),
@@ -236,18 +239,17 @@ pub fn grad<'a, B: Backend>(y: &'a Tensor<B>) -> HashMap<&'a Tensor<B>, Tensor<B
     grads
 }
 
-pub fn eval<'a, B, I>(x: I)
-    where B: Backend + 'a, I: IntoIterator<Item=&'a Tensor<B>> + 'a
+pub fn eval<'a, B, T, I>(x: I)
+    where B: Backend + 'a, T: Scalar, I: IntoIterator<Item=&'a Tensor<B, T>> + 'a
 {
-    let mut targets: Vec<&Tensor<B>> = x.into_iter().collect();
+    let mut targets: Vec<&Tensor<B, T>> = x.into_iter().collect();
     // sort x by t_order in descending order
     targets.sort_by_key(|b| std::cmp::Reverse(b.t_order()));
 
     let mut g = ir::Graph::new();
     let mut inputs = HashMap::<ir::Node, B::Tensor>::new();
-    let mut outputs = Vec::with_capacity(targets.len());
 
-    let mut done = HashMap::<&Tensor<B>, ir::Node>::new();
+    let mut done = HashMap::<&Tensor<B, T>, ir::Node>::new();
     let mut node_args = Vec::with_capacity(3);
 
     // traverse x
@@ -296,9 +298,9 @@ pub fn eval<'a, B, I>(x: I)
         }
     }
 
-    targets.iter().map(|v| done[v]).collect_into(&mut outputs);
+    targets.iter().for_each(|v| g.add_target(done[v]));
 
-    let res = B::eval(g, inputs, outputs);
+    let res = B::eval(g, inputs);
 
     for (target, r) in zip(targets, res) {
         RefCell::borrow_mut(&target.data).replace(r);
@@ -377,22 +379,22 @@ pub fn eval<'a, B, I>(x: I)
 // }
 
 
-impl<B: Backend> Eq for Tensor<B> {}
+impl<B: Backend, T:Scalar> Eq for Tensor<B, T> {}
 
-impl<B: Backend> PartialEq for Tensor<B> {
+impl<B: Backend, T:Scalar> PartialEq for Tensor<B, T> {
     fn eq(&self, other: &Self) -> bool {
         Rc::ptr_eq(&self.op, &other.op)
     }
 }
 
-impl<B: Backend> Hash for Tensor<B> {
+impl<B: Backend, T:Scalar> Hash for Tensor<B, T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         Rc::as_ptr(&self.op).hash(state)
     }
 }
 
 
-impl<B: Backend> Add for &Tensor<B> {
+impl<B: Backend, T:Scalar> Add for &Tensor<B, T> {
     type Output = Tensor<B>;
 
     fn add(self, rhs: Self) -> Self::Output {

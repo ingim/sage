@@ -2,53 +2,9 @@ use std::cell::RefCell;
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Mul;
-use std::rc::Weak;
+use std::rc::{Rc, Weak};
 
-// OpenCL data types
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum DataType {
-    // Integers
-    Int,
-    // Unsigned Integers
-    Uint,
-    // Floats
-    Float,
-}
-
-// buffer to store host-side data
-#[derive(Clone, Debug)]
-pub enum Buffer {
-    Int(Vec<i32>),
-    Uint(Vec<u32>),
-    Float(Vec<f32>),
-}
-
-
-impl Display for DataType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match *self {
-            DataType::Int => write!(f, "int"),
-            DataType::Uint => write!(f, "unsigned int"),
-            DataType::Float => write!(f, "float"),
-        }
-    }
-}
-
-impl DataType {
-    pub fn bytes(&self) -> usize {
-        match self {
-            DataType::Int => 4,
-            DataType::Uint => 4,
-            DataType::Float => 4,
-        }
-    }
-}
-
-pub trait Scalar: Sized + Copy + Send + Sync + Debug + Display + 'static {
-    fn data_type() -> DataType;
-    fn vec_to_data(v: Vec<Self>) -> Buffer;
-    fn data_to_vec(a: &Buffer) -> &[Self];
-}
+pub trait Scalar: Sized + Copy + Send + Sync + Debug + Display + 'static {}
 
 impl<T> DataLiteral<T> for Vec<T>
     where
@@ -73,10 +29,6 @@ pub trait DataLiteral<T>
 
     fn to_vec(&self) -> Vec<T> {
         self.flat_iter().collect()
-    }
-
-    fn to_buf(&self) -> Buffer {
-        T::vec_to_data(self.to_vec())
     }
 }
 
@@ -125,56 +77,8 @@ impl<T> DataLiteral<T> for T
     }
 }
 
-impl Scalar for f32 {
-    fn data_type() -> DataType {
-        DataType::Float
-    }
+impl Scalar for f32 {}
 
-    fn vec_to_data(v: Vec<f32>) -> Buffer {
-        Buffer::Float(v)
-    }
+impl Scalar for i32 {}
 
-    fn data_to_vec(a: &Buffer) -> &[Self] {
-        if let Buffer::Float(v) = a {
-            v
-        } else {
-            panic!("not convertable");
-        }
-    }
-}
-
-impl Scalar for i32 {
-    fn data_type() -> DataType {
-        DataType::Int
-    }
-
-    fn vec_to_data(v: Vec<i32>) -> Buffer {
-        Buffer::Int(v)
-    }
-
-    fn data_to_vec(a: &Buffer) -> &[Self] {
-        if let Buffer::Int(v) = a {
-            v
-        } else {
-            panic!("not convertable");
-        }
-    }
-}
-
-impl Scalar for u32 {
-    fn data_type() -> DataType {
-        DataType::Uint
-    }
-
-    fn vec_to_data(v: Vec<u32>) -> Buffer {
-        Buffer::Uint(v)
-    }
-
-    fn data_to_vec(a: &Buffer) -> &[Self] {
-        if let Buffer::Uint(v) = a {
-            v
-        } else {
-            panic!("not convertable");
-        }
-    }
-}
+impl Scalar for u32 {}

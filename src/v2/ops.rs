@@ -22,25 +22,25 @@ pub fn full<B: Backend, E: Extent>(scalar: f32, extent: E) -> Tensor<B> {
 }
 
 
-impl<B: Backend> Operator<0, B> for Full {
+impl<B: Backend> Operator<0, B, f32> for Full {
     fn grad(&self, x: &[Tensor<B>; 0], _: &Tensor<B>, gy: &Tensor<B>) -> [Option<Tensor<B>>; 0] {
         todo!()
     }
 
-    fn build_ir(&self, x: &[Node; 0], g: &mut Graph) -> Node {
-        g.full(self.scalar, self.shape.clone())
+    fn build_ir(&self, x: [Node; 0], g: &mut Graph) -> Node {
+        g.full(self.scalar)
     }
 }
 
 #[derive(Clone)]
 pub struct Add;
 
-impl<B: Backend> Operator<2, B> for Add {
+impl<B: Backend> Operator<2, B, f32> for Add {
     fn grad(&self, x: &[Tensor<B>; 2], _: &Tensor<B>, gy: &Tensor<B>) -> [Option<Tensor<B>>; 2] {
         todo!()
     }
 
-    fn build_ir(&self, x: &[Node; 2], g: &mut Graph) -> Node {
+    fn build_ir(&self, x: [Node; 2], g: &mut Graph) -> Node {
         g.add(x[0], x[1])
     }
 }

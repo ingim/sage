@@ -5,7 +5,7 @@ use std::rc::Rc;
 use crate::v2::backend::{Backend, TensorPrimitive};
 use crate::v2::ir;
 use crate::v2::shape::{Array, IndexIter, Shape};
-use crate::v2::tensor::data::{Buffer, Scalar};
+use crate::v2::tensor::data::Scalar;
 
 pub struct Native {}
 
@@ -13,16 +13,16 @@ pub struct Native {}
 impl Backend for Native {
     type Tensor = Tensor;
 
-    fn eval(f: ir::Graph, inputs: HashMap<ir::Node, Self::Tensor>, outputs: Vec<ir::Node>) -> Vec<Self::Tensor> {
+    fn eval(g: ir::Graph, inputs: HashMap<ir::Node, Self::Tensor>) -> Vec<Self::Tensor> {
 
         // first optimize the graph
-        let mut stack = outputs.clone();
+        let mut stack = g.targets().to_vec();
 
         let mut visited = HashMap::<ir::Node, Self::Tensor>::new();
         let mut arg_buf = Vec::<Self::Tensor>::with_capacity(3);
 
         while let Some(node) = stack.pop() {
-            let args = f.edges_in(node);
+            let args = g.edges_in(node);
 
             let mut unvisited = args.iter().filter(|arg| !visited.contains_key(*arg)).peekable();
 
@@ -32,10 +32,10 @@ impl Backend for Native {
             } else {
                 args.iter().map(|arg| visited[arg].clone()).collect_into(&mut arg_buf);
 
-                let data = match node.cmd() {
+                let data = match g.cmd(node) {
                     ir::Command::Data => inputs[&node].clone(),
-                    ir::Command::Full(scalar) => unimplemented!(),
-                    ir::Command::Add => add(&arg_buf)
+                    ir::Command::Full(scalar, ..) => unimplemented!(),
+                    ir::Command::Add => add(&arg_buf[0], &arg_buf[1]),
                 };
 
                 visited.insert(node, data);
@@ -43,7 +43,60 @@ impl Backend for Native {
             }
         }
 
-        outputs.into_iter().map(|node| visited[&node].clone()).collect()
+        g.targets().iter().map(|node| visited[&node].clone()).collect()
+    }
+}
+
+
+enum Buffer {
+    Float(Vec<f32>),
+    Int(Vec<i32>),
+}
+
+trait BufferElement: Scalar {
+    fn vec_into_buffer(vec: Vec<Self>) -> Buffer;
+    fn buffer_into_vec(buf: Buffer) -> Vec<Self>;
+    fn buffer_as_slice(buf: &Buffer) -> &[Self];
+}
+
+impl BufferElement for f32 {
+    fn vec_into_buffer(vec: Vec<Self>) -> Buffer {
+        Buffer::Float(vec)
+    }
+
+    fn buffer_into_vec(buf: Buffer) -> Vec<Self> {
+        match buf {
+            Buffer::Float(v) => v,
+            _ => panic!("data type does not match")
+        }
+    }
+
+    fn buffer_as_slice(buf: &Buffer) -> &[Self] {
+        match buf {
+            Buffer::Float(v) => v,
+            _ => panic!("data type does not match")
+        }
+    }
+}
+
+
+impl BufferElement for i32 {
+    fn vec_into_buffer(vec: Vec<Self>) -> Buffer {
+        Buffer::Int(vec)
+    }
+
+    fn buffer_into_vec(buf: Buffer) -> Vec<Self> {
+        match buf {
+            Buffer::Int(v) => v,
+            _ => panic!("data type does not match")
+        }
+    }
+
+    fn buffer_as_slice(buf: &Buffer) -> &[Self] {
+        match buf {
+            Buffer::Int(v) => v,
+            _ => panic!("data type does not match")
+        }
     }
 }
 
@@ -55,7 +108,7 @@ pub struct Tensor {
 }
 
 impl Tensor {
-    pub fn new(buffer: Buffer, shape: Shape) -> Self {
+    fn new(buffer: Buffer, shape: Shape) -> Self {
         Tensor { buffer: Rc::new(buffer), shape }
     }
 
@@ -63,11 +116,11 @@ impl Tensor {
         self.shape.extents()
     }
 
-    pub fn buffer<T: Scalar>(&self) -> &[T] {
-        T::data_to_vec(&self.buffer)
+    fn buffer<T: BufferElement>(&self) -> &[T] {
+        T::buffer_as_slice(&self.buffer)
     }
 
-    pub fn iter<T: Scalar>(&self) -> Iter<T> {
+    fn iter<T: BufferElement>(&self) -> Iter<T> {
         Iter::new(self)
     }
 }
@@ -84,21 +137,20 @@ pub fn full(shape: Shape, value: f32) -> Tensor {
 }
 
 
-pub fn add(args: &[Tensor]) -> Tensor {
-    let data = match (args[0].buffer.borrow(), args[1].buffer.borrow()) {
+pub fn add(x0: &Tensor, x1: &Tensor) -> Tensor {
+    let data = match (x0.buffer.borrow(), x1.buffer.borrow()) {
         (Buffer::Float(a), Buffer::Float(b)) => binary_map(a, b, |a, b| a + b),
         (Buffer::Int(a), Buffer::Int(b)) => binary_map(a, b, |a, b| a + b),
-        (Buffer::Uint(a), Buffer::Uint(b)) => binary_map(a, b, |a, b| a + b),
         _ => panic!("data type does not match")
     };
 
-    Tensor::new(data, args[0].shape.clone())
+    Tensor::new(data, x0.shape.clone())
 }
 
 
-pub fn binary_map<T: Scalar>(a: &[T], b: &[T], f: fn(T, T) -> T) -> Buffer
+fn binary_map<T: BufferElement>(a: &[T], b: &[T], f: fn(T, T) -> T) -> Buffer
 {
-    T::vec_to_data(zip(a, b).map(|(a, b)| f(*a, *b)).collect())
+    T::vec_into_buffer(zip(a, b).map(|(a, b)| f(*a, *b)).collect())
 }
 
 
@@ -110,7 +162,7 @@ pub struct Iter<'a, T>
 }
 
 impl<'a, T> Iter<'a, T>
-    where T: Scalar
+    where T: BufferElement
 {
     pub fn new(tensor: &'a Tensor) -> Self {
         Iter {

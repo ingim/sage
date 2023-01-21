@@ -3,19 +3,19 @@ use std::hash::{Hash, Hasher};
 
 #[derive(Default)]
 pub struct Graph {
-    nodes: HashSet<Node>,
+    cmds: Vec<Command>,
     edges_in: HashMap<Node, Vec<Node>>,
     edges_out: HashMap<Node, Vec<Node>>,
+    targets: Vec<Node>,
     id_counter: usize,
 }
 
 #[derive(Copy, Clone)]
 pub struct Node {
-    id: usize,
-    cmd: Command,
+    idx: usize,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub enum Command {
     Data,
     Full(f32, Vec<usize>),
@@ -24,17 +24,18 @@ pub enum Command {
 
 
 impl Node {
-    fn new(id: usize, cmd: Command) -> Self {
-        Node { id, cmd }
+    fn new(id: usize) -> Self {
+        Node { idx: id }
     }
-    pub fn cmd(&self) -> Command {
-        self.cmd
+
+    pub fn idx(&self) -> usize {
+        self.idx
     }
 }
 
 impl PartialEq for Node {
     fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
+        self.idx == other.idx
     }
 }
 
@@ -42,7 +43,7 @@ impl Eq for Node {}
 
 impl Hash for Node {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.id.hash(state);
+        self.idx.hash(state);
     }
 }
 
@@ -59,27 +60,37 @@ impl Graph {
         &self.edges_out[&node]
     }
 
-    fn create_node<const N: usize>(&mut self, cmd: Command, args: [Node; N]) -> Node {
-        let node = Node::new(self.id_counter, cmd);
-        self.id_counter += 1;
+    pub fn targets(&self) -> &[Node] {
+        &self.targets
+    }
 
-        self.nodes.insert(node);
+    pub fn add_target(&mut self, target: Node) {
+        self.targets.push(target);
+    }
+
+    fn create_node<const N: usize>(&mut self, cmd: Command, args: [Node; N]) -> Node {
+        let node = Node::new(self.cmds.len());
+
         self.edges_in.insert(node, args.to_vec());
 
-        for arg in args {
+        args.into_iter().for_each(|arg| {
             self.edges_out.entry(arg).or_default().push(node);
-        }
+        });
 
+        self.cmds.push(cmd);
         node
     }
 
+    pub fn cmd(&self, node: Node) -> &Command {
+        &self.cmds[node.idx()]
+    }
 
     pub fn data(&mut self) -> Node {
         self.create_node(Command::Data, [])
     }
 
-    pub fn full(&mut self, x: Node, scalar: f32) -> Node {
-        self.create_node(Command::Add, [x, self.data()])
+    pub fn full(&mut self, scalar: f32) -> Node {
+        self.create_node(Command::Add, [])
     }
 
 

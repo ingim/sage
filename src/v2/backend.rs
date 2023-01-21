@@ -15,7 +15,7 @@ pub trait TensorPrimitive
 
 pub trait Backend
 {
-    type Tensor: Clone + TensorPrimitive;
+    type Tensor: Clone + TensorPrimitive ;
 
-    fn eval(f: ir::Graph, inputs: HashMap<ir::Node, Self::Tensor>, outputs: Vec<ir::Node>) -> Vec<Self::Tensor>;
+    fn eval(f: ir::Graph, inputs: HashMap<ir::Node, Self::Tensor>) -> Vec<Self::Tensor>;
 }
