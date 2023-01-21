@@ -4,3 +4,4 @@ pub mod utils;
 pub mod ops;
 pub mod shape;
 mod ir;
+pub mod data;

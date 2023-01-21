@@ -2,7 +2,7 @@ use std::borrow::{Borrow, BorrowMut};
 use std::cell::RefCell;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
-use std::iter;
+use std::{fmt, iter};
 use std::iter::zip;
 use std::marker::PhantomData;
 use std::ops::{Add, Deref};
@@ -14,49 +14,45 @@ use crate::v2::backend::{Backend, TensorPrimitive};
 use crate::v2::backend::native::Native;
 use crate::v2::{backend, ir};
 use crate::v2::shape::Shape;
-use data::Scalar;
+use crate::v2::data::Scalar;
+use crate::v2::data::DataLiteral;
 use crate::v2::utils::Ranked;
 
-pub mod data;
-mod format;
 
-
-pub trait Operator<const N: usize, B: Backend, T:Scalar>: Clone {
-    fn grad(&self, x: &[Tensor<B, T>; N], y: &Tensor<B, T>, gy: &Tensor<B, T>) -> [Option<Tensor<B, T>>; N] {
+pub trait Operator<const N: usize, B: Backend>: Clone {
+    fn grad(&self, x: &[Tensor<B>; N], y: &Tensor<B>, gy: &Tensor<B>) -> [Option<Tensor<B>>; N] {
         [0; N].map(|_| None)
     }
 
     fn build_ir(&self, x: [ir::Node; N], g: &mut ir::Graph) -> ir::Node;
 }
 
-
-struct Operation<B: Backend, T:Scalar> {
-    args: Vec<Tensor<B, T>>,
+struct Operation<B: Backend> {
+    args: Vec<Tensor<B>>,
     t_order: usize,
 
-    grad: Box<dyn Fn(&[Tensor<B, T>], &Tensor<B, T>, &Tensor<B, T>) -> Vec<Option<Tensor<B, T>>>>,
+    grad: Box<dyn Fn(&[Tensor<B>], &Tensor<B>, &Tensor<B>) -> Vec<Option<Tensor<B>>>>,
     build_ir: Box<dyn Fn(&[ir::Node], &mut ir::Graph) -> ir::Node>,
 }
 
-
-impl<B: Backend, T:Scalar> Operation<B, T> {
-    fn new<const N: usize, O>(op: O, args: [Tensor<B, T>; N]) -> Self
-        where O: Operator<N, B, T> + 'static
+impl<B: Backend> Operation<B> {
+    fn new<const N: usize, O>(op: O, args: [Tensor<B>; N]) -> Self
+        where O: Operator<N, B> + 'static
     {
         let t_order = args.iter().map(|x| x.t_order()).max().unwrap_or(0);
         let op2 = op.clone();
 
-        let grad = Box::new(move |x: &[Tensor<B, T>], y: &Tensor<B, T>, gy: &Tensor<B, T>| {
+        let grad = Box::new(move |x: &[Tensor<B>], y: &Tensor<B>, gy: &Tensor<B>| {
             match x.try_into() {
                 Ok(x) => op.grad(x, y, gy),
-                Err(_) => panic!("sds"),
+                Err(_) => panic!("this should never happen"),
             }.to_vec()
         });
 
         let build_ir = Box::new(move |x: &[ir::Node], g: &mut ir::Graph| {
             match x.try_into() {
                 Ok(x) => op2.build_ir(x, g),
-                Err(_) => panic!("sds"),
+                Err(_) => panic!("this should never happen"),
             }
         });
 
@@ -68,11 +64,11 @@ impl<B: Backend, T:Scalar> Operation<B, T> {
         }
     }
 
-    pub fn args(&self) -> &[Tensor<B, T>] {
+    pub fn args(&self) -> &[Tensor<B>] {
         &self.args
     }
 
-    pub fn grad(&self, y: &Tensor<B, T>, gy: &Tensor<B, T>) -> Vec<Option<Tensor<B, T>>> {
+    pub fn grad(&self, y: &Tensor<B>, gy: &Tensor<B>) -> Vec<Option<Tensor<B>>> {
         (self.grad)(&self.args, y, gy)
     }
 
@@ -80,85 +76,23 @@ impl<B: Backend, T:Scalar> Operation<B, T> {
         (self.build_ir)(x, g)
     }
 }
-//
-//
-// struct Op<const N: usize, B: Backend> {
-//     f: Box<dyn Operator<N, B>>,
-//     args: [Tensor<B>; N],
-//
-//     // Topological order of the function.
-//     t_order: usize,
-// }
-//
-// struct VariadicOp<B: Backend> {
-//     f: Box<dyn VariadicOperator<B>>,
-//     args: Vec<Tensor<B>>,
-//
-//     // Topological order of the function.
-//     t_order: usize,
-// }
-//
-// impl<const N: usize, B: Backend> Op<N, B> {
-//     pub fn new<O>(f: O, args: [Tensor<B>; N]) -> Self
-//         where O: Operator<N, B> + 'static
-//     {
-//         let t_order = args.iter().map(|x| x.t_order()).max().unwrap_or(0);
-//         Op {
-//             f: Box::new(f),
-//             args,
-//             t_order: t_order + 1,
-//         }
-//     }
-// }
-//
-// impl<B: Backend> VariadicOp<B> {
-//     pub fn new<O>(f: O, args: Vec<Tensor<B>>) -> Self
-//         where O: VariadicOperator<B> + 'static
-//     {
-//         let t_order = args.iter().map(|x| x.t_order()).max().unwrap_or(0);
-//         VariadicOp {
-//             f: Box::new(f),
-//             args,
-//             t_order: t_order + 1,
-//         }
-//     }
-// }
-
-// enum Operation<B: Backend> {
-//     Constant,
-//     // Nullary(Op<0, B>),
-//     // Unary(Op<1, B>),
-//     // Binary(Op<2, B>),
-//     // Ternary(Op<3, B>),
-//     // Variadic(VariadicOp<B>),
-// }
 
 
-impl<B: Backend, T:Scalar> Operation<B, T> {}
-
-pub struct Tensor<B: Backend = Native, T: Scalar = f32> {
-    op: Rc<Option<Operation<B, T>>>,
+pub struct Tensor<B: Backend = Native> {
+    op: Rc<Option<Operation<B>>>,
     data: Rc<RefCell<Option<B::Tensor>>>,
 }
 
-impl<B: Backend, T: Scalar> Tensor<B, T> {
-    pub fn new() -> Self {
-        Tensor { op: Rc::new(None), data: Rc::new(RefCell::new(None)) }
-    }
-
-    pub fn from_op<const N: usize, O>(op: O, args: [Tensor<B, T>; N]) -> Self
-        where O: Operator<N, B, T> + 'static
+impl<B: Backend> Tensor<B> {
+    pub fn from_op<const N: usize, O>(op: O, args: [Tensor<B>; N]) -> Self
+        where O: Operator<N, B> + 'static
     {
         let op = Operation::new(op, args);
         Tensor { op: Rc::new(Some(op)), data: Rc::new(RefCell::new(None)) }
     }
 
     pub fn shape(&self) -> Shape {
-        if !self.ready() {
-            eval([self]);
-        }
-
-        self.data().unwrap().shape()
+        self.data().shape()
     }
 
     pub fn t_order(&self) -> usize {
@@ -170,41 +104,40 @@ impl<B: Backend, T: Scalar> Tensor<B, T> {
     }
 
     pub fn grad(&self, x: &Tensor<B>) -> Tensor<B> {
-        Tensor::new()
+        todo!()
     }
 
-    pub fn ready(&self) -> bool {
+    fn ready(&self) -> bool {
         RefCell::borrow(&self.data).is_some()
     }
 
-    pub fn data(&self) -> Option<B::Tensor> {
-        RefCell::borrow(&self.data).as_ref().cloned()
+    pub fn data(&self) -> B::Tensor {
+        if !self.ready() {
+            eval([self]);
+        }
+        // must unwrap because we just checked that it is ready
+        RefCell::borrow(&self.data).as_ref().cloned().unwrap()
     }
 }
-
 
 // native only
+impl Tensor {
+    pub fn new<D, T>(data: D) -> Self
+        where
+            D: DataLiteral<T>,
+            T: backend::native::BufferElement,
+    {
+        let data = backend::native::Tensor::new(data);
 
-impl Tensor<Native> {
-    // iterator
-    pub fn iter<T: Scalar>(&self) -> backend::native::Iter<T> {
-        todo!()
-
-        // RefCell::borrow(&self.data).as
-        //
-        // self.data().unwrap().iter()
-    }
-}
-
-
-impl<B: Backend, T:Scalar> Clone for Tensor<B, T> {
-    fn clone(&self) -> Self {
         Tensor {
-            op: self.op.clone(),
-            data: self.data.clone(),
+            op: Rc::new(None),
+            data: Rc::new(RefCell::new(Some(data))),
         }
     }
 }
+
+impl<B: Backend> Tensor<B> {}
+
 
 pub fn grad<'a, B: Backend>(y: &'a Tensor<B>) -> HashMap<&'a Tensor<B>, Tensor<B>> {
     let mut queue = BinaryHeap::<Ranked<&Tensor<B>>>::new();
@@ -239,17 +172,17 @@ pub fn grad<'a, B: Backend>(y: &'a Tensor<B>) -> HashMap<&'a Tensor<B>, Tensor<B
     grads
 }
 
-pub fn eval<'a, B, T, I>(x: I)
-    where B: Backend + 'a, T: Scalar, I: IntoIterator<Item=&'a Tensor<B, T>> + 'a
+pub fn eval<'a, B, I>(x: I)
+    where B: Backend + 'a, I: IntoIterator<Item=&'a Tensor<B>> + 'a
 {
-    let mut targets: Vec<&Tensor<B, T>> = x.into_iter().collect();
+    let mut targets: Vec<&Tensor<B>> = x.into_iter().collect();
     // sort x by t_order in descending order
     targets.sort_by_key(|b| std::cmp::Reverse(b.t_order()));
 
     let mut g = ir::Graph::new();
     let mut inputs = HashMap::<ir::Node, B::Tensor>::new();
 
-    let mut done = HashMap::<&Tensor<B, T>, ir::Node>::new();
+    let mut done = HashMap::<&Tensor<B>, ir::Node>::new();
     let mut node_args = Vec::with_capacity(3);
 
     // traverse x
@@ -267,7 +200,7 @@ pub fn eval<'a, B, T, I>(x: I)
                 continue;
             }
 
-            if let Some(data) = e.data() {
+            if let Some(data) = RefCell::borrow(&e.data).as_ref() {
                 let node = g.data();
                 inputs.insert(node, data.clone());
 
@@ -308,144 +241,41 @@ pub fn eval<'a, B, T, I>(x: I)
 }
 
 
-//
-//
-// //
-// //
-// //
-// //
-// // pub fn grad<'a, I>(y: &'a Fun, x: I) -> HashMap<&'a Fun, Fun>
-// //     where
-// //         I: IntoIterator<Item = &'a Fun> + 'a,
-// // {
-// //     let mut queue = BinaryHeap::<Ranked<&Fun>>::new();
-// //     let mut grads = HashMap::<&Fun, Fun>::new();
-// //
-// //     // The 'genesis' gy/gy, (which always equals to 1)
-// //     grads.insert(y, scalar(1.0, y.extents()));
-// //     queue.push(Ranked::new(y, y.t_order()));
-// //
-// //     while !queue.is_empty() {
-// //         // must unwrap
-// //         let y = queue.pop().unwrap().into_inner();
-// //         let gy = grads.get(&y).unwrap();
-// //
-// //         if let Some(op) = y.op() {
-// //             let x = op.input();
-// //             let gx = op.grad(y, gy);
-// //
-// //             // insert (x, gx) pairs into grads hashmap
-// //             for (x, gx) in x.iter().zip(gx.into_iter()) {
-// //                 // skip non-differentiable variables.
-// //                 if let Some(gx) = gx {
-// //                     if gx.extents() != x.extents() {
-// //                         println!("{:?}", op.cat());
-// //                         panic!("grad shape error. check grad func def");
-// //                     }
-// //
-// //                     if !grads.contains_key(x) {
-// //                         queue.push(Ranked::new(x, x.t_order()))
-// //                     }
-// //                     grads
-// //                         .entry(x)
-// //                         .and_modify(|v| *v = (&gx).add(&*v))
-// //                         .or_insert_with(|| gx);
-// //                 }
-// //             }
-// //         }
-// //     }
-// //
-// //     let mut grads_retained = HashMap::new();
-// //     for v in x {
-// //         grads_retained.insert(v, grads.remove(v).unwrap());
-// //     }
-// //
-// //     grads_retained
-// // }
-//
-//
-// impl<B: Backend> Eq for Function<B> {}
-//
-// impl<B: Backend> PartialEq for Function<B> {
-//     fn eq(&self, other: &Self) -> bool {
-//         Rc::ptr_eq(&self.op, &other.op)
-//     }
-// }
-//
-// impl<B: Backend> Hash for Function<B> {
-//     fn hash<H: Hasher>(&self, state: &mut H) {
-//         Rc::as_ptr(&self.op).hash(state);
-//     }
-// }
+impl<B: Backend> Clone for Tensor<B> {
+    fn clone(&self) -> Self {
+        Tensor {
+            op: self.op.clone(),
+            data: self.data.clone(),
+        }
+    }
+}
 
+impl<B: Backend> Eq for Tensor<B> {}
 
-impl<B: Backend, T:Scalar> Eq for Tensor<B, T> {}
-
-impl<B: Backend, T:Scalar> PartialEq for Tensor<B, T> {
+impl<B: Backend> PartialEq for Tensor<B> {
     fn eq(&self, other: &Self) -> bool {
         Rc::ptr_eq(&self.op, &other.op)
     }
 }
 
-impl<B: Backend, T:Scalar> Hash for Tensor<B, T> {
+impl<B: Backend> Hash for Tensor<B> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         Rc::as_ptr(&self.op).hash(state)
     }
 }
 
-
-impl<B: Backend, T:Scalar> Add for &Tensor<B, T> {
-    type Output = Tensor<B>;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Tensor::new()
+impl fmt::Debug for Tensor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.data())
     }
 }
 
 
-//
-// impl<B: Backend> Fn<(i32, )> for Tensor<B> {
-//     extern "rust-call" fn call(&self, _args: (i32, )) {
-//         println!("One argument");
-//     }
-// }
-//
-// impl<B: Backend> FnMut<(i32, )> for Tensor<B> {
-//     extern "rust-call" fn call_mut(&mut self, _args: (i32, )) {
-//         println!("One argument");
-//     }
-// }
-//
-// impl<B: Backend> FnOnce<(i32, )> for Tensor<B> {
-//     type Output = ();
-//
-//     extern "rust-call" fn call_once(self, _args: (i32, )) {
-//         println!("One argument");
-//     }
-// }
-//
-//
-// impl<B: Backend> Fn<(i32, i32)> for Tensor<B> {
-//     extern "rust-call" fn call(&self, _args: (i32, i32)) -> Self::Output {
-//         println!("Two argument");
-//         0
-//     }
-// }
-//
-// impl<B: Backend> FnMut<(i32, i32)> for Tensor<B> {
-//     extern "rust-call" fn call_mut(&mut self, _args: (i32, i32)) -> Self::Output {
-//         println!("Two argument");
-//         0
-//     }
-// }
-//
-// impl<B: Backend> FnOnce<(i32, i32)> for Tensor<B> {
-//     type Output = i32;
-//
-//     extern "rust-call" fn call_once(self, _args: (i32, i32)) -> Self::Output {
-//         println!("Two argument");
-//         0
-//     }
-// }
-//
+impl<B: Backend> Add for &Tensor<B> {
+    type Output = Tensor<B>;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        todo!()
+    }
+}
 

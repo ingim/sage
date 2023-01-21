@@ -18,10 +18,81 @@ pub struct Node {
 #[derive(Clone)]
 pub enum Command {
     Data,
-    Full(f32, Vec<usize>),
-    Add,
+    Constant(f32),
+    Map1(UnaryOperation),
+    Map2(BinaryOperation),
+    Map3(TernaryOperation),
 }
 
+#[derive(Copy, Clone)]
+pub enum UnaryOperation {
+    Id,
+
+    Abs,
+    Neg,
+    Recip,
+    Log,
+    Exp,
+    Sqrt,
+    Square,
+    Sign,
+
+    Ceil,
+    Floor,
+    Round,
+    // trig
+    Sin,
+    Sinh,
+    Cos,
+    Cosh,
+    Tan,
+    Tanh,
+    Asin,
+    Asinh,
+    Acos,
+    Acosh,
+    Atan,
+    Atanh,
+
+    // Status check
+    IsNan,
+    IsInf,
+
+    // Logic
+    Not,
+
+    // Cast
+    CastInt,
+    CastFloat,
+}
+
+#[derive(Copy, Clone)]
+pub enum BinaryOperation {
+    Add,
+    Sub,
+    Div,
+    Mul,
+
+    Mod,
+    Pow,
+    Min,
+    Max,
+
+    // Logic
+    And,
+    Or,
+    Eq,
+    Ne,
+    Gt,
+    Ge,
+    Lt,
+    Le,
+}
+
+#[derive(Copy, Clone)]
+pub enum TernaryOperation {
+    Cond
+}
 
 impl Node {
     fn new(id: usize) -> Self {
@@ -89,13 +160,13 @@ impl Graph {
         self.create_node(Command::Data, [])
     }
 
-    pub fn full(&mut self, scalar: f32) -> Node {
-        self.create_node(Command::Add, [])
+    pub fn constant(&mut self, scalar: f32) -> Node {
+        self.create_node(Command::Constant(scalar), [])
     }
 
 
     pub fn add(&mut self, x0: Node, x1: Node) -> Node {
-        self.create_node(Command::Add, [x0, x1])
+        self.create_node(Command::Map2(BinaryOperation::Add), [x0, x1])
     }
 }
 
