@@ -11,7 +11,7 @@ use itertools::Itertools;
 
 use crate::v2::ops::scalar;
 use crate::v2::backend::{Backend, TensorPrimitive};
-use crate::v2::backend::native::Native;
+use crate::v2::backend::native::{BufferElement, Native};
 use crate::v2::{backend, ir};
 use crate::v2::shape::Shape;
 use crate::v2::data::Scalar;
@@ -22,7 +22,7 @@ use crate::v2::utils::Ranked;
 pub trait Operator<const N: usize, B: Backend>: Clone {
     fn grad(&self, x: &[Tensor<B>; N], y: &Tensor<B>, gy: &Tensor<B>) -> [Option<Tensor<B>>; N];
 
-    fn build_ir(&self, x: [ir::Node; N], g: &mut ir::Graph) -> ir::Node;
+    fn build(&self, x: [ir::Node; N], g: &mut ir::Graph) -> ir::Node;
 }
 
 struct Operation<B: Backend> {
@@ -49,7 +49,7 @@ impl<B: Backend> Operation<B> {
 
         let build_ir = Box::new(move |x: &[ir::Node], g: &mut ir::Graph| {
             match x.try_into() {
-                Ok(x) => op2.build_ir(x, g),
+                Ok(x) => op2.build(x, g),
                 Err(_) => panic!("this should never happen"),
             }
         });
@@ -118,10 +118,6 @@ impl<B: Backend> Tensor<B> {
     }
 
     // impl operations
-
-
-
-
 }
 
 // native only
@@ -275,11 +271,31 @@ impl fmt::Debug for Tensor {
 }
 
 
-impl<B: Backend> Add for &Tensor<B> {
-    type Output = Tensor<B>;
+pub trait IntoTensor<B: Backend> {
+    fn into_tensor(self) -> Tensor<B>;
+}
 
-    fn add(self, rhs: Self) -> Self::Output {
-        todo!()
+impl<B: Backend> IntoTensor<B> for Tensor<B> {
+    fn into_tensor(self) -> Tensor<B> {
+        self
     }
 }
 
+impl<B: Backend> IntoTensor<B> for &Tensor<B> {
+    fn into_tensor(self) -> Tensor<B> {
+        self.clone()
+    }
+}
+
+
+impl<B: Backend> IntoTensor<B> for f32 {
+    fn into_tensor(self) -> Tensor<B> {
+        scalar(self)
+    }
+}
+
+impl<B: Backend> IntoTensor<B> for i32 {
+    fn into_tensor(self) -> Tensor<B> {
+        scalar(self as f32)
+    }
+}
