@@ -18,12 +18,12 @@ pub struct Native {}
 impl Backend for Native {
     type Tensor = Tensor;
 
-    fn eval(g: ir::Graph, inputs: HashMap<ir::Node, Self::Tensor>) -> Vec<Self::Tensor> {
+    fn eval(g: ir::Graph, inputs: HashMap<ir::NodeId, Self::Tensor>) -> Vec<Self::Tensor> {
 
         // first optimize the graph
         let mut stack = g.targets().to_vec();
 
-        let mut visited = HashMap::<ir::Node, Self::Tensor>::new();
+        let mut visited = HashMap::<ir::NodeId, Self::Tensor>::new();
         let mut arg_buf = Vec::<Self::Tensor>::with_capacity(3);
 
         while let Some(node) = stack.pop() {
@@ -205,7 +205,7 @@ pub fn map1(map_op: UnaryOperation, x: &Tensor) -> Tensor {
 fn map1_f32(map_op: UnaryOperation, a: &[f32]) -> Vec<f32>
 {
     let f: fn(f32) -> f32 = match map_op {
-        UnaryOperation::Id => |a| a,
+        UnaryOperation::Copy => |a| a,
         UnaryOperation::Abs => |a| a.abs(),
         UnaryOperation::Neg => |a| -a,
         UnaryOperation::Recip => |a| 1.0 / a,
@@ -240,7 +240,7 @@ fn map1_f32(map_op: UnaryOperation, a: &[f32]) -> Vec<f32>
 fn map1_i32(map_op: UnaryOperation, a: &[i32]) -> Vec<i32>
 {
     let f: fn(i32) -> i32 = match map_op {
-        UnaryOperation::Id => |a| a,
+        UnaryOperation::Copy => |a| a,
         UnaryOperation::Abs => |a| a.abs(),
         UnaryOperation::Neg => |a| -a,
         UnaryOperation::Square => |a| a * a,

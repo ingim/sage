@@ -13,7 +13,7 @@ use crate::v2::ops::scalar;
 use crate::v2::backend::{Backend, TensorPrimitive};
 use crate::v2::backend::native::{BufferElement, Native};
 use crate::v2::{backend, ir};
-use crate::v2::shape::Shape;
+use crate::v2::shape::{Axis, Extent, Shape};
 use crate::v2::data::Scalar;
 use crate::v2::data::DataLiteral;
 use crate::v2::utils::Ranked;
@@ -22,7 +22,7 @@ use crate::v2::utils::Ranked;
 pub trait Operator<const N: usize, B: Backend>: Clone {
     fn grad(&self, x: &[Tensor<B>; N], y: &Tensor<B>, gy: &Tensor<B>) -> [Option<Tensor<B>>; N];
 
-    fn build(&self, x: [ir::Node; N], g: &mut ir::Graph) -> ir::Node;
+    fn build(&self, x: [ir::NodeId; N], g: &mut ir::Graph) -> ir::NodeId;
 }
 
 struct Operation<B: Backend> {
@@ -30,7 +30,7 @@ struct Operation<B: Backend> {
     t_order: usize,
 
     grad: Box<dyn Fn(&[Tensor<B>], &Tensor<B>, &Tensor<B>) -> Vec<Option<Tensor<B>>>>,
-    build_ir: Box<dyn Fn(&[ir::Node], &mut ir::Graph) -> ir::Node>,
+    build: Box<dyn Fn(&[ir::NodeId], &mut ir::Graph) -> ir::NodeId>,
 }
 
 impl<B: Backend> Operation<B> {
@@ -47,7 +47,7 @@ impl<B: Backend> Operation<B> {
             }.to_vec()
         });
 
-        let build_ir = Box::new(move |x: &[ir::Node], g: &mut ir::Graph| {
+        let build = Box::new(move |x: &[ir::NodeId], g: &mut ir::Graph| {
             match x.try_into() {
                 Ok(x) => op2.build(x, g),
                 Err(_) => panic!("this should never happen"),
@@ -56,7 +56,7 @@ impl<B: Backend> Operation<B> {
 
         Operation {
             grad,
-            build_ir,
+            build,
             args: args.to_vec(),
             t_order,
         }
@@ -70,31 +70,45 @@ impl<B: Backend> Operation<B> {
         (self.grad)(&self.args, y, gy)
     }
 
-    pub fn build_ir(&self, x: &[ir::Node], g: &mut ir::Graph) -> ir::Node {
-        (self.build_ir)(x, g)
+    pub fn build_ir(&self, x: &[ir::NodeId], g: &mut ir::Graph) -> ir::NodeId {
+        (self.build)(x, g)
     }
 }
 
 
 pub struct Tensor<B: Backend = Native> {
-    op: Rc<Option<Operation<B>>>,
+    op: Option<Rc<Operation<B>>>,
     data: Rc<RefCell<Option<B::Tensor>>>,
+    shape: Rc<Shape>,
 }
 
 impl<B: Backend> Tensor<B> {
-    pub fn from_op<const N: usize, O>(op: O, args: [Tensor<B>; N]) -> Self
+    pub fn from_op<const N: usize, O>(op: O, args: [Tensor<B>; N], shape: Shape) -> Self
         where O: Operator<N, B> + 'static
     {
         let op = Operation::new(op, args);
-        Tensor { op: Rc::new(Some(op)), data: Rc::new(RefCell::new(None)) }
+        Tensor {
+            op: Some(Rc::new(op)),
+            data: Rc::new(RefCell::new(None)),
+            shape: Rc::new(shape),
+        }
     }
 
-    pub fn shape(&self) -> Shape {
-        self.data().shape()
+    pub fn shape(&self) -> &Shape {
+        &self.shape
     }
+
+    pub fn extents(&self) -> &[usize] {
+        self.shape.extents()
+    }
+
+    pub fn rank(&self) -> usize {
+        self.shape.num_axes()
+    }
+
 
     pub fn t_order(&self) -> usize {
-        if let Some(op) = &*self.op {
+        if let Some(op) = &self.op {
             op.t_order
         } else {
             0
@@ -118,6 +132,117 @@ impl<B: Backend> Tensor<B> {
     }
 
     // impl operations
+
+    // shaping functions
+    pub fn contiguous(&self) -> Tensor<B> {
+        if self.shape().has_default_strides() {
+            self.clone()
+        } else {
+            self.copy()
+        }
+    }
+
+    pub fn int(&self) -> Fun {
+        ops::map::int(self)
+    }
+
+    pub fn float(&self) -> Fun {
+        ops::map::float(self)
+    }
+
+    pub fn reshape(&self, shape: Shape) -> Fun {
+        ops::core::reshape(self, shape)
+    }
+
+    pub fn view<E>(&self, extent: E) -> Fun
+        where
+            E: Extent,
+    {
+        ops::core::view(self, extent)
+    }
+
+    pub fn expand<E>(&self, extent: E) -> Fun
+        where
+            E: Extent,
+    {
+        ops::core::expand(self, extent)
+    }
+
+    pub fn tr(&self) -> Fun {
+        ops::core::tr(self)
+    }
+
+    pub fn transpose<A1, A2>(&self, axis1: A1, axis2: A2) -> Fun
+        where
+            A1: Axis,
+            A2: Axis,
+    {
+        ops::core::transpose(self, axis1, axis2)
+    }
+
+    pub fn permute<A>(&self, axes: A) -> Fun
+        where
+            A: Axes,
+    {
+        ops::core::permute(self, axes)
+    }
+
+    pub fn squeeze<A>(&self, axis: A) -> Fun
+        where
+            A: Axis,
+    {
+        ops::core::squeeze(self, axis)
+    }
+
+    pub fn unsqueeze<A>(&self, axis: A) -> Fun
+        where
+            A: Axis,
+    {
+        ops::core::unsqueeze(self, axis)
+    }
+
+    pub fn index<A>(&self, axis: A, index: usize) -> Fun
+        where
+            A: Axis,
+    {
+        self.slice(axis, index, index + 1)
+    }
+
+    pub fn slice<A>(&self, axis: A, start: usize, end: usize) -> Fun
+        where
+            A: Axis,
+    {
+        ops::core::slice(self, axis, start, end)
+    }
+
+    pub fn unslice<V, A>(&self, axis: A, start: usize, end: usize) -> Fun
+        where
+            V: ToFun,
+            A: Axis,
+    {
+        ops::core::unslice(self, axis, start, end)
+    }
+
+    pub fn gather<V, A>(&self, idx: V, axis: A) -> Fun
+        where
+            V: ToFun,
+            A: Axis,
+    {
+        ops::core::gather(self, idx, axis)
+    }
+
+    pub fn scatter<V, A, E>(&self, idx: V, axis: A, extent: E) -> Fun
+        where
+            V: ToFun,
+            A: Axis,
+            E: Extent,
+    {
+        ops::core::scatter(self, idx, axis, extent)
+    }
+
+
+
+
 }
 
 // native only
@@ -130,7 +255,8 @@ impl Tensor {
         let data = backend::native::Tensor::new(data);
 
         Tensor {
-            op: Rc::new(None),
+            op: None,
+            shape: Rc::new(data.shape().clone()),
             data: Rc::new(RefCell::new(Some(data))),
         }
     }
@@ -151,7 +277,7 @@ pub fn grad<'a, B: Backend>(y: &'a Tensor<B>) -> HashMap<&'a Tensor<B>, Tensor<B
         let y = queue.pop().unwrap().into_inner();
         let gy = grads.get(&y).unwrap();
 
-        if let Some(op) = &*y.op {
+        if let Some(op) = &y.op {
             let x = op.args();
             let gx = op.grad(y, gy);
 
@@ -163,7 +289,7 @@ pub fn grad<'a, B: Backend>(y: &'a Tensor<B>) -> HashMap<&'a Tensor<B>, Tensor<B
                     }
                     grads
                         .entry(x)
-                        .and_modify(|v| *v = gx.add(v))
+                        .and_modify(|v| *v = v.add(gx))
                         .or_insert_with(|| gx);
                 }
             }
@@ -180,9 +306,9 @@ pub fn eval<'a, B, I>(x: I)
     targets.sort_by_key(|b| std::cmp::Reverse(b.t_order()));
 
     let mut g = ir::Graph::new();
-    let mut inputs = HashMap::<ir::Node, B::Tensor>::new();
+    let mut inputs = HashMap::<ir::NodeId, B::Tensor>::new();
 
-    let mut done = HashMap::<&Tensor<B>, ir::Node>::new();
+    let mut done = HashMap::<&Tensor<B>, ir::NodeId>::new();
     let mut node_args = Vec::with_capacity(3);
 
     // traverse x
@@ -209,7 +335,7 @@ pub fn eval<'a, B, I>(x: I)
             }
 
             // attempt to insert into the graph
-            else if let Some(op) = &*e.op {
+            else if let Some(op) = &e.op {
                 let mut not_done = op.args()
                     .iter()
                     .filter(|v| !done.contains_key(v))
@@ -246,6 +372,7 @@ impl<B: Backend> Clone for Tensor<B> {
         Tensor {
             op: self.op.clone(),
             data: self.data.clone(),
+            shape: self.shape.clone(),
         }
     }
 }
@@ -254,13 +381,13 @@ impl<B: Backend> Eq for Tensor<B> {}
 
 impl<B: Backend> PartialEq for Tensor<B> {
     fn eq(&self, other: &Self) -> bool {
-        Rc::ptr_eq(&self.op, &other.op)
+        Rc::ptr_eq(&self.data, &other.data)
     }
 }
 
 impl<B: Backend> Hash for Tensor<B> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        Rc::as_ptr(&self.op).hash(state)
+        Rc::as_ptr(&self.data).hash(state)
     }
 }
 

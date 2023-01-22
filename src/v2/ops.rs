@@ -1,640 +1,795 @@
-use crate::v2::tensor::{IntoTensor, Operator, Tensor};
 use crate::v2::backend::Backend;
-use std::marker::PhantomData;
-use std::ops;
-use smallvec::{SmallVec, smallvec, ToSmallVec};
-use crate::v2::ir::{BinaryOperation, Graph, Node, TernaryOperation, UnaryOperation};
-use crate::v2::shape::{Extent, Shape};
+use crate::v2::ir::{Graph, NodeId};
+use crate::v2::shape::{Array, Extent, Shape};
+use crate::v2::tensor::{IntoTensor, Operator, Tensor};
+
+pub mod map;
 
 
-impl<B: Backend> Tensor<B> {
-    pub fn abs(&self) -> Tensor<B> {
-        abs(self)
-    }
-    pub fn recip(&self) -> Tensor<B> {
-        recip(self)
-    }
-    pub fn log(&self) -> Tensor<B> {
-        log(self)
-    }
-    pub fn exp(&self) -> Tensor<B> {
-        exp(self)
-    }
-    pub fn sqrt(&self) -> Tensor<B> {
-        sqrt(self)
-    }
-    pub fn square(&self) -> Tensor<B> {
-        square(self)
-    }
-    pub fn sign(&self) -> Tensor<B> {
-        sign(self)
-    }
-    pub fn ceil(&self) -> Tensor<B> {
-        ceil(self)
-    }
-    pub fn floor(&self) -> Tensor<B> {
-        floor(self)
-    }
-    pub fn round(&self) -> Tensor<B> {
-        round(self)
-    }
-    pub fn sin(&self) -> Tensor<B> {
-        sin(self)
-    }
-    pub fn sinh(&self) -> Tensor<B> {
-        sinh(self)
-    }
-    pub fn cos(&self) -> Tensor<B> {
-        cos(self)
-    }
-    pub fn cosh(&self) -> Tensor<B> {
-        cosh(self)
-    }
-    pub fn tan(&self) -> Tensor<B> {
-        tan(self)
-    }
-    pub fn tanh(&self) -> Tensor<B> {
-        tanh(self)
-    }
-    pub fn asin(&self) -> Tensor<B> {
-        asin(self)
-    }
-    pub fn asinh(&self) -> Tensor<B> {
-        asinh(self)
-    }
-    pub fn acos(&self) -> Tensor<B> {
-        acos(self)
-    }
-    pub fn acosh(&self) -> Tensor<B> {
-        acosh(self)
-    }
-    pub fn atan(&self) -> Tensor<B> {
-        atan(self)
-    }
-    pub fn atanh(&self) -> Tensor<B> {
-        atanh(self)
-    }
-
-    pub fn modulo<T: IntoTensor<B>>(&self, x: T) -> Tensor<B> {
-        modulo(self, x)
-    }
-
-
-    pub fn pow<T: IntoTensor<B>>(&self, x: T) -> Tensor<B> {
-        pow(self, x)
-    }
-
-
-    pub fn min<T: IntoTensor<B>>(&self, x: T) -> Tensor<B> {
-        min(self, x)
-    }
-
-    pub fn max<T: IntoTensor<B>>(&self, x: T) -> Tensor<B> {
-        max(self, x)
-    }
-
-
-    pub fn and<T: IntoTensor<B>>(&self, x: T) -> Tensor<B> {
-        and(self, x)
-    }
-
-
-    pub fn or<T: IntoTensor<B>>(&self, x: T) -> Tensor<B> {
-        or(self, x)
-    }
-
-
-    pub fn equal<T: IntoTensor<B>>(&self, x: T) -> Tensor<B> {
-        eq(self, x)
-    }
-
-
-    pub fn ne<T: IntoTensor<B>>(&self, x: T) -> Tensor<B> {
-        ne(self, x)
-    }
-
-
-    pub fn gt<T: IntoTensor<B>>(&self, x: T) -> Tensor<B> {
-        gt(self, x)
-    }
-
-
-    pub fn ge<T: IntoTensor<B>>(&self, x: T) -> Tensor<B> {
-        ge(self, x)
-    }
-
-
-    pub fn lt<T: IntoTensor<B>>(&self, x: T) -> Tensor<B> {
-        lt(self, x)
-    }
-
-
-    pub fn le<T: IntoTensor<B>>(&self, x: T) -> Tensor<B> {
-        le(self, x)
-    }
-
-    pub fn cond<T1: IntoTensor<B>, T2: IntoTensor<B>>(&self, x1: T1, x2: T2) -> Tensor<B> {
-        cond(self, x1, x2)
-    }
+#[derive(Clone, Debug)]
+pub enum LayoutOperator {
+    Expand(Expand),
 }
 
-
-#[derive(Clone)]
-pub struct Full {
-    scalar: f32,
+// copy
+#[derive(Clone, Debug)]
+struct Reshape {
     shape: Shape,
 }
 
-#[derive(Clone)]
-pub struct Map1 {
-    op: UnaryOperation,
+// no-copy
+#[derive(Clone, Debug)]
+pub struct Expand {
+    shape: Shape,
 }
 
-#[derive(Clone)]
-pub struct Map2 {
-    op: BinaryOperation,
+#[derive(Clone, Debug)]
+struct Permute {
+    perm: Array,
 }
 
-#[derive(Clone)]
-pub struct Map3 {
-    op: TernaryOperation,
+#[derive(Clone, Debug)]
+struct Squeeze {
+    axis: usize,
 }
 
-pub fn scalar<B: Backend>(scalar: f32) -> Tensor<B> {
-    full(scalar, 1)
+#[derive(Clone, Debug)]
+struct Unsqueeze {
+    axis: usize,
 }
 
-
-pub fn full<B: Backend, E: Extent>(scalar: f32, extent: E) -> Tensor<B> {
-    Tensor::from_op(Full { scalar, shape: Shape::new(extent) }, [])
+#[derive(Clone, Debug)]
+struct Slice {
+    axis: usize,
+    start: usize,
+    end: usize,
 }
 
+#[derive(Clone, Debug)]
+struct Unslice {
+    axis: usize,
+    start: usize,
+    end: usize,
+}
 
-impl<B: Backend> Operator<0, B> for Full {
-    fn grad(&self, x: &[Tensor<B>; 0], _: &Tensor<B>, gy: &Tensor<B>) -> [Option<Tensor<B>>; 0] {
+#[derive(Clone, Debug)]
+struct Gather {
+    axis: usize,
+}
+
+#[derive(Clone, Debug)]
+struct Scatter {
+    axis: usize,
+}
+
+pub fn ceil_div(a: usize, b: usize) -> usize {
+    1 + ((a - 1) / b)
+}
+
+pub fn ceil(a: usize, b: usize) -> usize {
+    ceil_div(a, b) * b
+}
+
+pub fn div_up(a: usize, b: usize) -> usize {
+    (a + (b - 1)) / b
+}
+
+pub fn inc_arr<const N: usize>(start: usize) -> [usize; N] {
+    let mut x = [0; N];
+    for i in 0..N {
+        x[i] = i + start;
+    }
+    x
+}
+
+pub fn view<B, T, E>(x: T, extents: E) -> Tensor<B>
+    where B: Backend, T: IntoTensor<B>, E: Extent
+{
+    let x = x.into_tensor();
+    let extents = extents.to_arr(x.size()).unwrap();
+    reshape(x, Shape::new(&extents))
+}
+
+pub fn reshape<B, T>(x: T, shape: Shape) -> Tensor<B>
+    where B: Backend, T: IntoTensor<B>
+{
+    let x = x.into_tensor().contiguous();
+
+    if x.size() != shape.size() {
+        panic!("incompatible size");
+    }
+
+    Tensor::from_op(
+        Reshape {
+            shape: shape.clone()
+        },
+        [x],
+        shape,
+    )
+}
+
+// always creates new tensor
+impl<B: Backend> Operator<1, B> for Reshape {
+    fn grad(&self, x: &[Tensor<B>; 1], _: &Tensor<B>, gy: &Tensor<B>) -> [Option<Tensor<B>>; 1] {
+        [Some(reshape(gy, x[0].shape().clone()))]
+    }
+
+    fn build(&self, x: [NodeId; 1], g: &mut Graph) -> NodeId {
+        // g.reshape(x[0], self.shape.clone())
         todo!()
     }
-
-    fn build(&self, x: [Node; 0], g: &mut Graph) -> Node {
-        g.constant(self.scalar)
-    }
 }
 
+pub fn expand<V, E>(x: V, extents: E) -> Fun
+    where
+        V: ToFun,
+        E: Extent,
+{
+    let x = x.to_fun();
+    let extents = extents.to_arr(0).unwrap();
 
-pub fn map1<B: Backend>(op: UnaryOperation, x: Tensor<B>) -> Tensor<B> {
-    Tensor::from_op(Map1 { op }, [x])
+    Fun::from_unary_op(
+        Expand {
+            input: [x.desc().clone()],
+            output: TensorDesc {
+                shape: x.shape().expand(&extents),
+                data_type: x.data_type(),
+            },
+        },
+        x,
+    )
 }
 
-pub fn map2<B: Backend>(op: BinaryOperation, x0: Tensor<B>, x1: Tensor<B>) -> Tensor<B> {
-    Tensor::from_op(Map2 { op }, [x0, x1])
-}
-
-pub fn map3<B: Backend>(op: TernaryOperation, x0: Tensor<B>, x1: Tensor<B>, x2: Tensor<B>) -> Tensor<B> {
-    Tensor::from_op(Map3 { op }, [x0, x1, x2])
-}
-
-impl<B: Backend> Operator<1, B> for Map1 {
-    fn grad(&self, x: &[Tensor<B>; 1], y: &Tensor<B>, gy: &Tensor<B>) -> [Option<Tensor<B>>; 1] {
-        let x = &x[0];
-        [match self.op {
-            UnaryOperation::Id => Some(gy.clone()),
-            UnaryOperation::Abs => Some(sign(x) * gy),
-            UnaryOperation::Neg => Some(-gy.clone()),
-            UnaryOperation::Recip => Some(-gy / x.square()),
-            UnaryOperation::Log => Some(gy / x),
-            UnaryOperation::Exp => Some(gy * y),
-            UnaryOperation::Sqrt => Some(gy / (y * 2.0)),
-            UnaryOperation::Square => Some(gy * x * 2.0),
-            UnaryOperation::Sign => Some(scalar(0.0)),
-            UnaryOperation::Ceil => Some(scalar(0.0)),
-            UnaryOperation::Floor => Some(scalar(0.0)),
-            UnaryOperation::Round => Some(scalar(0.0)),
-            UnaryOperation::Sin => Some(gy * x.cos()),
-            UnaryOperation::Sinh => Some(gy * x.cosh()),
-            UnaryOperation::Cos => Some(-gy * x.sin()),
-            UnaryOperation::Cosh => Some(gy * x.sinh()),
-            UnaryOperation::Tan => Some(gy / x.cos().square()),
-            UnaryOperation::Tanh => Some(gy / x.cosh().square()),
-            UnaryOperation::Asin => Some(gy / (-x.square() + 1.0).sqrt()),
-            UnaryOperation::Asinh => Some(gy / (x.square() + 1.0).sqrt()),
-            UnaryOperation::Acos => Some(-gy / (-x.square() + 1.0).sqrt()),
-            UnaryOperation::Acosh => Some(gy / (x.square() - 1.0).sqrt()),
-            UnaryOperation::Atan => Some(gy / (x.square() + 1.0)),
-            UnaryOperation::Atanh => Some(gy / (-x.square() + 1.0)),
-            _ => None
-        }]
+impl Compose<1> for Expand {
+    fn input(&self) -> &[TensorDesc; 1] {
+        &self.input
     }
 
-    fn build(&self, x: [Node; 1], g: &mut Graph) -> Node {
-        g.map1(self.op, x[0])
+    fn output(&self) -> &TensorDesc {
+        &self.output
     }
-}
 
+    fn grad(&self, x: [&Fun; 1], _: &Fun, gy: &Fun) -> [Option<Fun>; 1] {
+        // match dims from the backwards
 
-impl<B: Backend> Operator<2, B> for Map2 {
-    fn grad(&self, x: &[Tensor<B>; 2], _: &Tensor<B>, gy: &Tensor<B>) -> [Option<Tensor<B>>; 2] {
-        let x1 = &x[0];
-        let x2 = &x[1];
+        let surplus = gy.rank() - x[0].rank();
+        let mut axes = Array::new();
 
-        match self.op {
-            BinaryOperation::Add => [Some(gy.clone()), Some(gy.clone())],
-            BinaryOperation::Sub => [Some(gy.clone()), Some(-gy.clone())],
-            BinaryOperation::Div => [Some(gy / x2), Some(gy * (-x1 / x2.square()))],
-            BinaryOperation::Mul => [Some(gy * x2), Some(gy * x1)],
-            BinaryOperation::Mod => [Some(gy.clone()), Some(-gy * (x1 / x2).floor())],
-            BinaryOperation::Pow => [
-                Some(gy * x2 * x1.pow(x2 - 1.0)),
-                Some(gy * x1.pow(x2) * x1.log()),
-            ],
-            BinaryOperation::Min => [
-                Some(gy * lt(x1, x2)),
-                Some(gy * ge(x1, x2)),
-            ],
-            BinaryOperation::Max => [
-                Some(gy * lt(x2, x1)),
-                Some(gy * ge(x2, x1)),
-            ],
-            BinaryOperation::And => [None, None],
-            BinaryOperation::Or => [None, None],
-            BinaryOperation::Eq => [None, None],
-            BinaryOperation::Ne => [None, None],
-            BinaryOperation::Gt => [None, None],
-            BinaryOperation::Ge => [None, None],
-            BinaryOperation::Lt => [None, None],
-            BinaryOperation::Le => [None, None],
-            _ => [None, None],
+        for i in 0..surplus {
+            axes.push(i);
         }
-    }
 
-    fn build(&self, x: [Node; 2], g: &mut Graph) -> Node {
-        g.map2(self.op, x[0], x[1])
-    }
-}
-
-impl<B: Backend> Operator<3, B> for Map3 {
-    fn grad(&self, x: &[Tensor<B>; 3], y: &Tensor<B>, gy: &Tensor<B>) -> [Option<Tensor<B>>; 3] {
-        let x1 = &x[0];
-        let x2 = &x[1];
-        let x3 = &x[2];
-
-        match self.op {
-            TernaryOperation::Cond => [Some(cond(x1, gy, 0.0)), Some(cond(x1, 0.0, gy)), None],
-            _ => [None, None, None],
+        for i in 0..x[0].rank() {
+            if gy.extent(i + surplus) != x[0].extent(i) {
+                axes.push(i + surplus);
+            }
         }
+
+        // println!("gy {:?}", gy.extents());
+        // println!("expected gx {:?}", x.extents());
+        // println!("actual gx {:?}", gy.sum(&axes, false).extents());
+
+        [Some(gy.sum(axes, false).view(self.input[0].extents()))]
     }
 
-    fn build(&self, x: [Node; 3], g: &mut Graph) -> Node {
-        g.map3(self.op, x[0], x[1], x[2])
+    fn compute(&self, x: [&Tensor; 1], _: &mut Context) -> Result<Tensor, Error> {
+        Ok(x[0].expand(self.output().shape.extents()))
     }
-}
 
-
-pub fn abs<B, T>(x: T) -> Tensor<B>
-    where B: Backend, T: IntoTensor<B>
-{
-    map1(UnaryOperation::Abs, x.into_tensor())
-}
-
-
-pub fn neg<B, T>(x: T) -> Tensor<B>
-    where B: Backend, T: IntoTensor<B>
-{
-    map1(UnaryOperation::Neg, x.into_tensor())
-}
-
-
-pub fn recip<B, T>(x: T) -> Tensor<B>
-    where B: Backend, T: IntoTensor<B>
-{
-    map1(UnaryOperation::Recip, x.into_tensor())
-}
-
-
-pub fn log<B, T>(x: T) -> Tensor<B>
-    where B: Backend, T: IntoTensor<B>
-{
-    map1(UnaryOperation::Log, x.into_tensor())
-}
-
-
-pub fn exp<B, T>(x: T) -> Tensor<B>
-    where B: Backend, T: IntoTensor<B>
-{
-    map1(UnaryOperation::Exp, x.into_tensor())
-}
-
-
-pub fn sqrt<B, T>(x: T) -> Tensor<B>
-    where B: Backend, T: IntoTensor<B>
-{
-    map1(UnaryOperation::Sqrt, x.into_tensor())
-}
-
-pub fn square<B, T>(x: T) -> Tensor<B>
-    where B: Backend, T: IntoTensor<B>
-{
-    map1(UnaryOperation::Square, x.into_tensor())
-}
-
-
-pub fn sign<B, T>(x: T) -> Tensor<B>
-    where B: Backend, T: IntoTensor<B>
-{
-    map1(UnaryOperation::Sign, x.into_tensor())
-}
-
-
-pub fn ceil<B, T>(x: T) -> Tensor<B>
-    where B: Backend, T: IntoTensor<B>
-{
-    map1(UnaryOperation::Ceil, x.into_tensor())
-}
-
-
-pub fn floor<B, T>(x: T) -> Tensor<B>
-    where B: Backend, T: IntoTensor<B>
-{
-    map1(UnaryOperation::Floor, x.into_tensor())
-}
-
-pub fn round<B, T>(x: T) -> Tensor<B>
-    where B: Backend, T: IntoTensor<B>
-{
-    map1(UnaryOperation::Round, x.into_tensor())
-}
-
-
-pub fn sin<B, T>(x: T) -> Tensor<B>
-    where B: Backend, T: IntoTensor<B>
-{
-    map1(UnaryOperation::Sin, x.into_tensor())
-}
-
-pub fn sinh<B, T>(x: T) -> Tensor<B>
-    where B: Backend, T: IntoTensor<B>
-{
-    map1(UnaryOperation::Sinh, x.into_tensor())
-}
-
-pub fn cos<B, T>(x: T) -> Tensor<B>
-    where B: Backend, T: IntoTensor<B>
-{
-    map1(UnaryOperation::Cos, x.into_tensor())
-}
-
-pub fn cosh<B, T>(x: T) -> Tensor<B>
-    where B: Backend, T: IntoTensor<B>
-{
-    map1(UnaryOperation::Cosh, x.into_tensor())
-}
-
-pub fn tan<B, T>(x: T) -> Tensor<B>
-    where B: Backend, T: IntoTensor<B>
-{
-    map1(UnaryOperation::Tan, x.into_tensor())
-}
-
-
-pub fn tanh<B, T>(x: T) -> Tensor<B>
-    where B: Backend, T: IntoTensor<B>
-{
-    map1(UnaryOperation::Tanh, x.into_tensor())
-}
-
-
-pub fn asin<B, T>(x: T) -> Tensor<B>
-    where B: Backend, T: IntoTensor<B>
-{
-    map1(UnaryOperation::Asin, x.into_tensor())
-}
-
-pub fn asinh<B, T>(x: T) -> Tensor<B>
-    where B: Backend, T: IntoTensor<B>
-{
-    map1(UnaryOperation::Asinh, x.into_tensor())
-}
-
-pub fn acos<B, T>(x: T) -> Tensor<B>
-    where B: Backend, T: IntoTensor<B>
-{
-    map1(UnaryOperation::Acos, x.into_tensor())
-}
-
-pub fn acosh<B, T>(x: T) -> Tensor<B>
-    where B: Backend, T: IntoTensor<B>
-{
-    map1(UnaryOperation::Acosh, x.into_tensor())
-}
-
-pub fn atan<B, T>(x: T) -> Tensor<B>
-    where B: Backend, T: IntoTensor<B>
-{
-    map1(UnaryOperation::Atan, x.into_tensor())
-}
-
-pub fn atanh<B, T>(x: T) -> Tensor<B>
-    where B: Backend, T: IntoTensor<B>
-{
-    map1(UnaryOperation::Atanh, x.into_tensor())
-}
-
-
-pub fn add<B, T1, T2>(x1: T1, x2: T2) -> Tensor<B>
-    where B: Backend, T1: IntoTensor<B>, T2: IntoTensor<B>
-{
-    map2(BinaryOperation::Add, x1.into_tensor(), x2.into_tensor())
-}
-
-pub fn sub<B, T1, T2>(x1: T1, x2: T2) -> Tensor<B>
-    where B: Backend, T1: IntoTensor<B>, T2: IntoTensor<B>
-{
-    map2(BinaryOperation::Sub, x1.into_tensor(), x2.into_tensor())
-}
-
-pub fn div<B, T1, T2>(x1: T1, x2: T2) -> Tensor<B>
-    where B: Backend, T1: IntoTensor<B>, T2: IntoTensor<B>
-{
-    map2(BinaryOperation::Div, x1.into_tensor(), x2.into_tensor())
-}
-
-
-pub fn mul<B, T1, T2>(x1: T1, x2: T2) -> Tensor<B>
-    where B: Backend, T1: IntoTensor<B>, T2: IntoTensor<B>
-{
-    map2(BinaryOperation::Mul, x1.into_tensor(), x2.into_tensor())
-}
-
-
-pub fn modulo<B, T1, T2>(x1: T1, x2: T2) -> Tensor<B>
-    where B: Backend, T1: IntoTensor<B>, T2: IntoTensor<B>
-{
-    map2(BinaryOperation::Mod, x1.into_tensor(), x2.into_tensor())
-}
-
-
-pub fn pow<B, T1, T2>(x1: T1, x2: T2) -> Tensor<B>
-    where B: Backend, T1: IntoTensor<B>, T2: IntoTensor<B>
-{
-    map2(BinaryOperation::Pow, x1.into_tensor(), x2.into_tensor())
-}
-
-
-pub fn min<B, T1, T2>(x1: T1, x2: T2) -> Tensor<B>
-    where B: Backend, T1: IntoTensor<B>, T2: IntoTensor<B>
-{
-    map2(BinaryOperation::Min, x1.into_tensor(), x2.into_tensor())
-}
-
-
-pub fn max<B, T1, T2>(x1: T1, x2: T2) -> Tensor<B>
-    where B: Backend, T1: IntoTensor<B>, T2: IntoTensor<B>
-{
-    map2(BinaryOperation::Max, x1.into_tensor(), x2.into_tensor())
-}
-
-
-pub fn and<B, T1, T2>(x1: T1, x2: T2) -> Tensor<B>
-    where B: Backend, T1: IntoTensor<B>, T2: IntoTensor<B>
-{
-    map2(BinaryOperation::And, x1.into_tensor(), x2.into_tensor())
-}
-
-
-pub fn or<B, T1, T2>(x1: T1, x2: T2) -> Tensor<B>
-    where B: Backend, T1: IntoTensor<B>, T2: IntoTensor<B>
-{
-    map2(BinaryOperation::Or, x1.into_tensor(), x2.into_tensor())
-}
-
-
-pub fn eq<B, T1, T2>(x1: T1, x2: T2) -> Tensor<B>
-    where B: Backend, T1: IntoTensor<B>, T2: IntoTensor<B>
-{
-    map2(BinaryOperation::Eq, x1.into_tensor(), x2.into_tensor())
-}
-
-
-pub fn ne<B, T1, T2>(x1: T1, x2: T2) -> Tensor<B>
-    where B: Backend, T1: IntoTensor<B>, T2: IntoTensor<B>
-{
-    map2(BinaryOperation::Ne, x1.into_tensor(), x2.into_tensor())
-}
-
-
-pub fn gt<B, T1, T2>(x1: T1, x2: T2) -> Tensor<B>
-    where B: Backend, T1: IntoTensor<B>, T2: IntoTensor<B>
-{
-    map2(BinaryOperation::Gt, x1.into_tensor(), x2.into_tensor())
-}
-
-
-pub fn ge<B, T1, T2>(x1: T1, x2: T2) -> Tensor<B>
-    where B: Backend, T1: IntoTensor<B>, T2: IntoTensor<B>
-{
-    map2(BinaryOperation::Ge, x1.into_tensor(), x2.into_tensor())
-}
-
-
-pub fn lt<B, T1, T2>(x1: T1, x2: T2) -> Tensor<B>
-    where B: Backend, T1: IntoTensor<B>, T2: IntoTensor<B>
-{
-    map2(BinaryOperation::Lt, x1.into_tensor(), x2.into_tensor())
-}
-
-
-pub fn le<B, T1, T2>(x1: T1, x2: T2) -> Tensor<B>
-    where B: Backend, T1: IntoTensor<B>, T2: IntoTensor<B>
-{
-    map2(BinaryOperation::Le, x1.into_tensor(), x2.into_tensor())
-}
-
-
-pub fn cond<B, T1, T2, T3>(x1: T1, x2: T2, x3: T3) -> Tensor<B>
-    where B: Backend, T1: IntoTensor<B>, T2: IntoTensor<B>, T3: IntoTensor<B>
-{
-    map3(TernaryOperation::Cond, x1.into_tensor(), x2.into_tensor(), x3.into_tensor())
-}
-
-
-impl<B: Backend, T: IntoTensor<B>> ops::Add<T> for Tensor<B>
-{
-    type Output = Tensor<B>;
-    fn add(self, x: T) -> Self::Output {
-        add(self, x)
+    fn cat(&self) -> Category {
+        Category::Layout(LayoutOperator::Expand(self.clone()))
     }
 }
 
-impl<B: Backend, T: IntoTensor<B>> ops::Add<T> for &Tensor<B>
+pub fn tr<V>(x: V) -> Fun
+    where
+        V: ToFun,
 {
-    type Output = Tensor<B>;
-    fn add(self, x: T) -> Self::Output {
-        add(self, x)
+    transpose(x, 0, 1)
+}
+
+pub fn transpose<V, A1, A2>(x: V, axis1: A1, axis2: A2) -> Fun
+    where
+        V: ToFun,
+        A1: Axis,
+        A2: Axis,
+{
+    let x = x.to_fun();
+    let rank = x.rank();
+
+    let axis1 = axis1.to_usize(rank).unwrap();
+    let axis2 = axis2.to_usize(rank).unwrap();
+
+    let axes = (0..rank)
+        .map(|i| {
+            if i == axis1 {
+                axis2
+            } else if i == axis2 {
+                axis1
+            } else {
+                i
+            }
+        })
+        .collect::<Array>();
+
+    permute(x, axes)
+}
+
+pub fn permute<V, A>(x: V, axes: A) -> Fun
+    where
+        V: ToFun,
+        A: Axes,
+{
+    let x = x.to_fun();
+    let axes = axes.to_arr(x.rank()).unwrap();
+
+    Fun::from_unary_op(
+        Permute {
+            input: [x.desc().clone()],
+            output: TensorDesc {
+                shape: x.shape().permute(axes.as_slice()),
+                data_type: x.data_type(),
+            },
+            perm: axes,
+        },
+        x,
+    )
+}
+
+impl Compose<1> for Permute {
+    fn input(&self) -> &[TensorDesc; 1] {
+        &self.input
+    }
+
+    fn output(&self) -> &TensorDesc {
+        &self.output
+    }
+
+    fn grad(&self, _: [&Fun; 1], _: &Fun, gy: &Fun) -> [Option<Fun>; 1] {
+        // [A, B, C, D] -> permute(2, 1, 4, 3) -> [B, A, D, C]
+        // [B, A, D, C] -> permute(2, 1, 4, 3) -> [A, B, C, D]
+
+        [Some(permute(gy, self.perm.as_slice()))]
+    }
+
+    fn compute(&self, x: [&Tensor; 1], _: &mut Context) -> Result<Tensor, Error> {
+        Ok(x[0].permute(self.perm.as_slice()))
     }
 }
 
-
-impl<B: Backend, T: IntoTensor<B>> ops::Sub<T> for Tensor<B>
+pub fn squeeze<V, A>(x: V, axis: A) -> Fun
+    where
+        V: ToFun,
+        A: Axis,
 {
-    type Output = Tensor<B>;
-    fn sub(self, x: T) -> Self::Output {
-        sub(self, x)
+    let mut x = x.to_fun();
+    let axis = axis.to_usize(x.rank()).unwrap();
+
+    Fun::from_unary_op(
+        Squeeze {
+            input: [x.desc().clone()],
+            output: TensorDesc {
+                shape: x.shape().remove(axis),
+                data_type: x.data_type(),
+            },
+            axis,
+        },
+        x,
+    )
+}
+
+impl Compose<1> for Squeeze {
+    fn input(&self) -> &[TensorDesc; 1] {
+        &self.input
+    }
+
+    fn output(&self) -> &TensorDesc {
+        &self.output
+    }
+
+    fn grad(&self, _: [&Fun; 1], _: &Fun, gy: &Fun) -> [Option<Fun>; 1] {
+        [Some(unsqueeze(gy, self.axis))]
+    }
+
+    fn compute(&self, x: [&Tensor; 1], _: &mut Context) -> Result<Tensor, Error> {
+        Ok(x[0].squeeze_axis(self.axis))
     }
 }
 
-impl<B: Backend, T: IntoTensor<B>> ops::Sub<T> for &Tensor<B>
+pub fn unsqueeze<V, A>(x: V, axis: A) -> Fun
+    where
+        V: ToFun,
+        A: Axis,
 {
-    type Output = Tensor<B>;
-    fn sub(self, x: T) -> Self::Output {
-        sub(self, x)
+    let x = x.to_fun();
+    let axis = axis.to_usize(x.rank() + 1).unwrap();
+
+    Fun::from_unary_op(
+        Unsqueeze {
+            input: [x.desc().clone()],
+            output: TensorDesc {
+                shape: x.shape().insert(axis),
+                data_type: x.data_type(),
+            },
+            axis,
+        },
+        x,
+    )
+}
+
+impl Compose<1> for Unsqueeze {
+    fn input(&self) -> &[TensorDesc; 1] {
+        &self.input
+    }
+
+    fn output(&self) -> &TensorDesc {
+        &self.output
+    }
+
+    fn grad(&self, _: [&Fun; 1], _: &Fun, gy: &Fun) -> [Option<Fun>; 1] {
+        [Some(squeeze(gy, self.axis))]
+    }
+
+    fn compute(&self, x: [&Tensor; 1], _: &mut Context) -> Result<Tensor, Error> {
+        Ok(x[0].expand_axis(self.axis))
     }
 }
 
-
-impl<B: Backend, T: IntoTensor<B>> ops::Div<T> for Tensor<B>
+pub fn slice<V, A>(x: V, axis: A, start: usize, end: usize) -> Fun
+    where
+        V: ToFun,
+        A: Axis,
 {
-    type Output = Tensor<B>;
-    fn div(self, x: T) -> Self::Output {
-        div(self, x)
+    let x = x.to_fun();
+    let axis = axis.to_usize(x.rank()).unwrap();
+
+    Fun::from_unary_op(
+        Slice {
+            input: [x.desc().clone()],
+            output: TensorDesc {
+                shape: x.shape().select_range(start, end - 1, axis),
+                data_type: x.data_type(),
+            },
+            axis,
+            start,
+            end,
+        },
+        x,
+    )
+}
+
+impl Compose<1> for Slice {
+    fn input(&self) -> &[TensorDesc; 1] {
+        &self.input
+    }
+
+    fn output(&self) -> &TensorDesc {
+        &self.output
+    }
+
+    fn grad(&self, x: [&Fun; 1], _: &Fun, gy: &Fun) -> [Option<Fun>; 1] {
+        // scatter add
+        [Some(unslice(
+            gy,
+            self.axis,
+            self.start,
+            x[0].extent(self.axis),
+        ))]
+    }
+
+    fn compute(&self, x: [&Tensor; 1], _: &mut Context) -> Result<Tensor, Error> {
+        Ok(x[0].slice(self.start, self.end, self.axis))
     }
 }
 
-impl<B: Backend, T: IntoTensor<B>> ops::Div<T> for &Tensor<B>
+pub fn unslice<V, A>(x: V, axis: A, start: usize, end: usize) -> Fun
+    where
+        V: ToFun,
+        A: Axis,
 {
-    type Output = Tensor<B>;
-    fn div(self, x: T) -> Self::Output {
-        div(self, x)
+    let x = x.to_fun();
+    let axis = axis.to_usize(x.rank()).unwrap();
+
+    assert!(end >= start + x.extent(axis));
+
+    let mut extents = x.extents().to_vec();
+    extents[axis] = end;
+
+    Fun::from_unary_op(
+        Unslice {
+            input: [x.desc().clone()],
+            output: TensorDesc {
+                shape: Shape::new(extents),
+                data_type: x.data_type(),
+            },
+            axis,
+            start,
+            end,
+        },
+        x,
+    )
+}
+
+impl Compose<1> for Unslice {
+    fn input(&self) -> &[TensorDesc; 1] {
+        &self.input
+    }
+
+    fn output(&self) -> &TensorDesc {
+        &self.output
+    }
+
+    fn grad(&self, x: [&Fun; 1], _: &Fun, gy: &Fun) -> [Option<Fun>; 1] {
+        [Some(slice(
+            gy,
+            self.axis,
+            self.start,
+            self.start + x[0].extent(self.axis),
+        ))]
+    }
+
+    fn compute(&self, x: [&Tensor; 1], ctx: &mut Context) -> Result<Tensor, Error> {
+        let x = x[0];
+        let mut extents = x.extents().to_vec();
+        extents[self.axis] = self.end;
+
+        let y = Tensor::uninit2(self.output(), ctx)?; // all defaults to gpu tensors
+        y.fill_zero();
+
+        let stride_ref = Shape::default_strides(x.extents());
+
+        let data_type = x.data_type().opencl();
+        // computer.submit(ctx.backend.unslice())
+        let (idx_c, is_direct) = translate_id(
+            "gid",
+            &stride_ref,
+            &["idx_x", "idx_y"],
+            &[x.strides(), y.strides()],
+            &[x.offset(), y.offset() + self.start * y.strides()[self.axis]],
+        );
+
+        let p = ctx.get_program(format!(
+            r#"
+        __kernel void unslice(
+            __global const {data_type} *x,
+            __global {data_type} *y) {{
+            uint gid = get_global_id(0);
+            {idx_c}
+            y[idx_y] = x[idx_x];
+        }} "#
+        ));
+
+        p.kernel("unslice")
+            .arg_tensor(x)
+            .arg_tensor(&y)
+            .global_work_size(x.size())
+            .launch()
+            .map_err(Error::Device)?;
+
+        Ok(y)
     }
 }
 
-impl<B: Backend, T: IntoTensor<B>> ops::Mul<T> for Tensor<B>
+pub fn gather<V1, V2, A>(x: V1, ind: V2, axis: A) -> Fun
+    where
+        V1: ToFun,
+        V2: ToFun,
+        A: Axis,
 {
-    type Output = Tensor<B>;
-    fn mul(self, x: T) -> Self::Output {
-        mul(self, x)
+    let x = x.to_fun();
+    let ind = ind.to_fun();
+    let axis = axis.to_usize(x.rank()).unwrap();
+
+    assert_eq!(x.rank(), ind.rank());
+
+    // (164, 100) g0 (64, 100) -> (64, 1)
+    assert!((0..x.rank()).any(|i| i == axis || x.extent(i) >= ind.extent(i)));
+
+    Fun::from_binary_op(
+        Gather {
+            input: [x.desc().clone(), ind.desc().clone()],
+            output: TensorDesc {
+                shape: Shape::new(ind.extents()),
+                data_type: x.data_type(),
+            },
+            axis,
+        },
+        x,
+        ind,
+    )
+}
+
+impl Compose<2> for Gather {
+    fn input(&self) -> &[TensorDesc; 2] {
+        &self.input
+    }
+
+    fn output(&self) -> &TensorDesc {
+        &self.output
+    }
+
+    fn grad(&self, x: [&Fun; 2], _: &Fun, gy: &Fun) -> [Option<Fun>; 2] {
+        [Some(scatter(gy, x[1], self.axis, x[0].extents())), None]
+    }
+
+    fn compute(&self, x: [&Tensor; 2], ctx: &mut Context) -> Result<Tensor, Error> {
+        let strides = display_comma(x[0].strides());
+        let strides_idx = display_comma(x[1].strides());
+
+        let strides_d = display_comma(Shape::default_strides(x[1].extents()).as_slice());
+        let ndim = x[0].rank(); // == ind.order();
+        let axis = self.axis;
+        let data_type = x[0].data_type().opencl();
+
+        let y = Tensor::uninit2(self.output(), ctx)?; // all defaults to gpu tensors
+
+        let (gather_id_c, _) = translate_id(
+            "gid",
+            &Shape::default_strides(x[1].extents()),
+            &["gather_idx"],
+            &[x[1].strides()],
+            &[0],
+        );
+
+        let p = ctx.get_program(format!(
+            r#"
+            __kernel void gather(
+                __global const {data_type} *x,
+                __private const int x_offset,
+                __global const uint *ind,
+                __private const int ind_offset,
+                __global {data_type} *y,
+                __private const int y_offset) {{
+
+                uint gid = get_global_id(0);
+
+                uint idx = x_offset;
+
+                {gather_id_c}
+                uint target_idx = ind[gather_idx + ind_offset];
+
+                uint strides[{ndim}] = {{{strides}}};
+                uint strides_d[{ndim}] = {{{strides_d}}};
+                uint rem2 = gid;
+                for (uint i = 0; i < {ndim}; ++i) {{
+                    uint c = rem2 / strides_d[i];
+                    rem2 -= c * strides_d[i];
+                    if (i == {axis} ) {{
+                        idx += target_idx * strides[i];
+                    }} else {{
+                        idx += c * strides[i];
+                    }}
+                }}
+                y[gid + y_offset] = x[idx];
+             }} "#
+        ));
+
+        p.kernel("gather")
+            .arg_tensor(x[0])
+            .arg(x[0].offset() as i32)
+            .arg_tensor(x[1])
+            .arg(x[1].offset() as i32)
+            .arg_tensor(&y)
+            .arg(y.offset() as i32)
+            .global_work_size(y.size())
+            .launch()
+            .map_err(Error::Device)?;
+        Ok(y)
     }
 }
 
-impl<B: Backend, T: IntoTensor<B>> ops::Mul<T> for &Tensor<B>
+pub fn scatter<V1, V2, A, E>(x: V1, ind: V2, axis: A, extents: E) -> Fun
+    where
+        V1: ToFun,
+        V2: ToFun,
+        A: Axis,
+        E: Extent,
 {
-    type Output = Tensor<B>;
-    fn mul(self, x: T) -> Self::Output {
-        mul(self, x)
+    let x = x.to_fun();
+    let ind = ind.to_fun();
+    let axis = axis.to_usize(x.rank()).unwrap();
+    let extents = extents.to_arr(0).unwrap();
+
+    assert_eq!(extents.len(), x.rank());
+    assert_eq!(x.rank(), ind.rank());
+
+    // (64, 1) -> (64, 1) with (64, 10)
+    assert!((0..x.rank())
+        .any(|i| { i == axis || (x.extent(i) >= ind.extent(i) && extents[i] >= x.extent(i)) }));
+
+    Fun::from_binary_op(
+        Scatter {
+            input: [x.desc().clone(), ind.desc().clone()],
+            output: TensorDesc::new(extents, x.data_type()),
+            axis,
+        },
+        x,
+        ind,
+    )
+}
+
+impl Compose<2> for Scatter {
+    fn input(&self) -> &[TensorDesc; 2] {
+        &self.input
+    }
+
+    fn output(&self) -> &TensorDesc {
+        &self.output
+    }
+
+    fn grad(&self, x: [&Fun; 2], _: &Fun, gy: &Fun) -> [Option<Fun>; 2] {
+        [Some(gather(gy, x[1], self.axis)), None]
+    }
+
+    fn compute(&self, x: [&Tensor; 2], ctx: &mut Context) -> Result<Tensor, Error> {
+        let data_type = x[0].data_type();
+        let strides_src = display_comma(x[0].strides());
+        let strides_dst = display_comma(self.output.shape().strides());
+        let strides_d = display_comma(x[1].strides());
+
+        let ndim = self.output.shape().num_axes();
+        let axis = self.axis;
+
+        let (scatter_id_c, _) = translate_id(
+            "gid",
+            &Shape::default_strides(x[1].extents()),
+            &["scatter_idx"],
+            &[x[1].strides()],
+            &[0],
+        );
+
+        let y = Tensor::uninit2(self.output(), ctx)?; // all defaults to gpu tensors
+        y.fill_zero();
+
+        let p = ctx.get_program(format!(
+            r#"
+        __kernel void scatter(__global const {data_type} *x,
+            __private const int x_offset,
+            __global const uint *ind,
+            __private const int ind_offset,
+            __global {data_type} *y,
+            __private const int y_offset) {{
+
+            uint gid = get_global_id(0);
+            uint idx_in = x_offset;
+            uint idx_out = y_offset;
+
+            uint strides_dst[{ndim}] = {{{strides_dst}}};
+            uint strides_src[{ndim}] = {{{strides_src}}};
+            uint strides_d[{ndim}] = {{{strides_d}}};
+
+            {scatter_id_c}
+
+            uint target_idx = ind[scatter_idx + ind_offset];
+
+            uint rem2 = gid;
+            for (uint i = 0; i < {ndim}; ++i) {{
+                uint c = rem2 / strides_d[i];
+                rem2 -= c * strides_d[i];
+                idx_in += c * strides_src[i];
+                if (i == {axis}) {{
+                    idx_out += target_idx * strides_dst[i];
+                }} else {{
+                    idx_out += c * strides_dst[i];
+                }}
+            }}
+            y[idx_out + y_offset] += x[idx_in];
+        }}
+        "#
+        ));
+
+        p.kernel("scatter")
+            .arg_tensor(x[0])
+            .arg(x[0].offset() as i32)
+            .arg_tensor(x[1])
+            .arg(x[1].offset() as i32)
+            .arg_tensor(&y)
+            .arg(y.offset() as i32)
+            .global_work_size(x[1].size())
+            .launch()
+            .map_err(Error::Device)?;
+
+        Ok(y)
     }
 }
 
-impl<B: Backend> ops::Neg for Tensor<B>
+pub fn concat<V, I, A>(x: I, axis: A) -> Fun
+    where
+        V: ToFun,
+        I: IntoIterator<Item=V>,
+        A: Axis,
 {
-    type Output = Tensor<B>;
-    fn neg(self) -> Self::Output {
-        neg(self)
+    let x: Vec<Fun> = x.into_iter().map(|v| v.to_fun()).collect_vec();
+    let axis = axis.to_usize(x[0].rank()).unwrap();
+
+    let mut concat_size = x[0].extent(axis);
+
+    for v in x.iter().skip(1) {
+        if v.rank() != x[0].rank()
+            || v.extents()[..axis] != x[0].extents()[..axis]
+            || v.extents()[(axis + 1)..] != x[0].extents()[(axis + 1)..]
+        {
+            panic!("not in the same shape");
+        }
+        concat_size += v.extent(axis);
     }
+
+    let mut extents = x[0].extents().to_vec();
+    extents[axis] = concat_size;
+
+    Fun::from_variadic_op(
+        Concat {
+            input: x.iter().map(|v| v.desc()).cloned().collect_vec(),
+            output: TensorDesc {
+                shape: Shape::new(extents),
+                data_type: x[0].data_type(),
+            },
+            axis,
+        },
+        x,
+    )
 }
 
-impl<B: Backend> ops::Neg for &Tensor<B>
-{
-    type Output = Tensor<B>;
-    fn neg(self) -> Self::Output {
-        neg(self)
+impl VariadicCompose for Concat {
+    fn input(&self) -> &[TensorDesc] {
+        &self.input
+    }
+
+    fn output(&self) -> &TensorDesc {
+        &self.output
+    }
+
+    fn grad(&self, x: &[Fun], _: &Fun, gy: &Fun) -> Vec<Option<Fun>> {
+        let mut i = 0;
+        let mut g = Vec::new();
+        for e in x.iter().map(|v| v.extents()[self.axis]) {
+            g.push(Some(slice(gy, self.axis, i, i + e)));
+            i += e;
+        }
+        g
+    }
+
+    fn compute(&self, x: &[Tensor], ctx: &mut Context) -> Result<Tensor, Error> {
+        let data_type = x[0].data_type();
+
+        //let y = Tensor::zeros(self.output().shape().extents()).to_device(ctx); // all defaults to gpu tensors
+        let y = Tensor::uninit2(self.output(), ctx)?;
+        y.fill_zero();
+
+        let mut i = 0;
+
+        for v in x {
+            let e = v.extent(self.axis);
+
+            let y_sub_shape = y.shape().select_range(i, i + e - 1, self.axis);
+            i += e;
+
+            let stride_ref = Shape::default_strides(v.extents());
+
+            let (idx_c, is_direct) = translate_id(
+                "gid",
+                &stride_ref,
+                &["idx_in", "idx_out"],
+                &[v.strides(), y_sub_shape.strides()],
+                &[v.offset(), y_sub_shape.offset()],
+            );
+
+            let p = ctx.get_program(format!(
+                r#"
+                __kernel void concat(__global const {data_type} *x, __global {data_type} *y) {{
+                    uint gid = get_global_id(0);
+                    {idx_c}
+                    y[idx_out] = x[idx_in];
+                }}"#
+            ));
+
+            p.kernel("concat")
+                .arg_tensor(v)
+                .arg_tensor(&y)
+                .global_work_size(v.size())
+                .launch()
+                .map_err(Error::Device)?;
+        }
+        Ok(y)
     }
 }
-
